@@ -1,0 +1,76 @@
+"""LLM 推理客户端（可插拔）
+
+默认走 OpenCode 网关（zenmux.ai，OpenAI 兼容），key 自动从 OpenCode 登录文件读取。
+比赛要求最终用 Nebius Token Factory——届时只需在 .env 设置：
+    LLM_BASE_URL=https://api.studio.nebius.ai/v1  （以官方文档为准）
+    LLM_API_KEY=<nebius key>
+    LLM_MODEL=<开源模型名>
+其余代码零改动。
+"""
+
+import json
+import os
+
+import requests
+
+TIMEOUT = 120
+
+# OpenCode 登录文件：key 已在本机，避免明文复制到处散落
+OPENCODE_AUTH = os.path.expanduser("~/.local/share/opencode/auth.json")
+
+
+class LLMError(RuntimeError):
+    pass
+
+
+def load_env(path: str = None) -> None:
+    path = path or os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip())
+
+
+def _opencode_key() -> str:
+    try:
+        with open(OPENCODE_AUTH, encoding="utf-8") as f:
+            return json.load(f)["opencode"]["key"]
+    except Exception:
+        return ""
+
+
+def chat(messages: list, model: str = None, temperature: float = 0.2) -> str:
+    """OpenAI 兼容 chat completions，返回首条回复文本。失败抛 LLMError，绝不静默。"""
+    load_env()
+    base = os.environ.get("LLM_BASE_URL", "https://zenmux.ai/api/v1").rstrip("/")
+    key = os.environ.get("LLM_API_KEY", "").strip() or _opencode_key()
+    model = model or os.environ.get("LLM_MODEL", "z-ai/glm-5.3-flash")
+    if not key:
+        raise LLMError("无 LLM key：设置 LLM_API_KEY，或登录 OpenCode 以便自动读取")
+
+    try:
+        resp = requests.post(
+            f"{base}/chat/completions",
+            headers={"Authorization": f"Bearer {key}"},
+            json={"model": model, "messages": messages, "temperature": temperature},
+            timeout=TIMEOUT,
+        )
+    except requests.RequestException as e:
+        raise LLMError(f"LLM 网络请求失败：{e}") from e
+
+    if resp.status_code in (401, 403):
+        raise LLMError("LLM key 无效（401/403）")
+    if resp.status_code == 429:
+        raise LLMError("LLM 限流/额度不足（429）")
+    if resp.status_code != 200:
+        raise LLMError(f"LLM 返回 {resp.status_code}: {resp.text[:200]}")
+
+    try:
+        return resp.json()["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, ValueError) as e:
+        raise LLMError(f"LLM 响应格式异常: {resp.text[:200]}") from e
