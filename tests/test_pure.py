@@ -8,7 +8,8 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from agent import _json_out, Trace, MAX_SOURCES, SNIPPET_CHARS  # noqa: E402
+from agent import _json_out, _norm_url, _is_low_trust, Trace, MAX_SOURCES, SNIPPET_CHARS  # noqa: E402
+
 
 
 def test_json_out_variants():
@@ -41,6 +42,36 @@ def test_snippet_truncation():
     assert short[:SNIPPET_CHARS] + ("…" if len(short) > SNIPPET_CHARS else "") == short
     print("[ok] 单源正文截断逻辑")
 
+def test_norm_url_dedup():
+    # 同文的 http/https、www、查询串、末尾斜杠差异必须视作同一条
+    pairs = [
+        ("http://www.a.com/x/", "https://a.com/x"),
+        ("https://a.com/x?from=search", "http://a.com/x"),
+        ("HTTPS://A.COM/X#top", "http://www.a.com/x"),
+    ]
+    for a, b in pairs:
+        assert _norm_url(a) == _norm_url(b), f"应等价: {a} vs {b}"
+    assert _norm_url("https://a.com/x") != _norm_url("https://a.com/y")  # 不同路径不误杀
+    assert _norm_url("") == ""  # 空值不炸（防御 URL 缺失的来源）
+    print("[ok] URL 规范化去重")
+
+
+def test_low_trust_ranking():
+    # 低可信来源应被降权到末尾，从而在截断时优先被淘汰
+    pool = [
+        {"title": "知乎分析", "url": "https://zhihu.com/p/1", "_low_trust": True},
+        {"title": "官方博客", "url": "https://nvidia.com/blog", "_low_trust": False},
+        {"title": "Reddit帖", "url": "https://reddit.com/r/x", "_low_trust": True},
+        {"title": "技术文档", "url": "https://docs.aws.com/t", "_low_trust": False},
+    ]
+    assert _is_low_trust("https://zhihu.com/p/1") is True
+    assert _is_low_trust("https://docs.aws.com/t") is False
+    assert _is_low_trust("https://zhuanlan.zhihu.com/p/1") is True  # 子域名也要命中
+
+    pool.sort(key=lambda r: r.get("_low_trust", False))
+    assert [r["url"] for r in pool][:2] == ["https://nvidia.com/blog", "https://docs.aws.com/t"]
+    print("[ok] 低可信来源降权排序")
+
 
 def test_trace_save():
     t = Trace(None)
@@ -57,9 +88,12 @@ def test_trace_save():
     print("[ok] 轨迹落盘与目录自动创建")
 
 
-if __name__ == "__main__":
+if __name__ == "__&#8203;main__":
     test_json_out_variants()
     test_source_cap()
     test_snippet_truncation()
+    test_norm_url_dedup()      # 新增
+    test_low_trust_ranking()   # 新增
     test_trace_save()
     print("\n[✓] 全部纯逻辑测试通过")
+
