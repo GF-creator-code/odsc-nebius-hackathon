@@ -2,21 +2,31 @@
 
 默认走 OpenCode 网关（zenmux.ai，OpenAI 兼容），key 自动从 OpenCode 登录文件读取。
 比赛要求最终用 Nebius Token Factory——届时只需在 .env 设置：
-    LLM_BASE_URL=https://api.studio.nebius.ai/v1  （以官方文档为准）
+    LLM_BASE_URL=<Token Factory 端点，见官方文档>
     LLM_API_KEY=<nebius key>
     LLM_MODEL=<开源模型名>
 其余代码零改动。
+
+加固点：
+- 瞬时失败（网络/429/5xx）指数退避重试，最多 2 次；鉴权错误快速失败
+- content 为 None（部分模型工具调用场景）显式报错，不返回空串冒充答案
+- requests.Session 连接复用
 """
 
 import json
 import os
+import time
 
 import requests
 
 TIMEOUT = 120
+RETRIES = 2
+BACKOFF = (2, 5)
 
 # OpenCode 登录文件：key 已在本机，避免明文复制到处散落
 OPENCODE_AUTH = os.path.expanduser("~/.local/share/opencode/auth.json")
+
+_session = requests.Session()
 
 
 class LLMError(RuntimeError):
@@ -53,24 +63,42 @@ def chat(messages: list, model: str = None, temperature: float = 0.2) -> str:
     if not key:
         raise LLMError("无 LLM key：设置 LLM_API_KEY，或登录 OpenCode 以便自动读取")
 
-    try:
-        resp = requests.post(
-            f"{base}/chat/completions",
-            headers={"Authorization": f"Bearer {key}"},
-            json={"model": model, "messages": messages, "temperature": temperature},
-            timeout=TIMEOUT,
-        )
-    except requests.RequestException as e:
-        raise LLMError(f"LLM 网络请求失败：{e}") from e
+    last_err = None
+    for attempt in range(RETRIES + 1):
+        try:
+            resp = _session.post(
+                f"{base}/chat/completions",
+                headers={"Authorization": f"Bearer {key}"},
+                json={"model": model, "messages": messages, "temperature": temperature},
+                timeout=TIMEOUT,
+            )
+        except requests.RequestException as e:
+            last_err = f"LLM 网络请求失败：{e}"
+            if attempt < RETRIES:
+                time.sleep(BACKOFF[attempt])
+                continue
+            raise LLMError(last_err) from e
 
-    if resp.status_code in (401, 403):
-        raise LLMError("LLM key 无效（401/403）")
-    if resp.status_code == 429:
-        raise LLMError("LLM 限流/额度不足（429）")
-    if resp.status_code != 200:
-        raise LLMError(f"LLM 返回 {resp.status_code}: {resp.text[:200]}")
+        if resp.status_code in (401, 403):
+            raise LLMError("LLM key 无效（401/403）")
+        if resp.status_code == 429 or resp.status_code >= 500:
+            last_err = f"LLM 限流/服务端错误（{resp.status_code}）"
+            if attempt < RETRIES:
+                time.sleep(BACKOFF[attempt])
+                continue
+            raise LLMError(last_err)
+        if resp.status_code != 200:
+            raise LLMError(f"LLM 返回 {resp.status_code}: {resp.text[:200]}")
 
-    try:
-        return resp.json()["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, ValueError) as e:
-        raise LLMError(f"LLM 响应格式异常: {resp.text[:200]}") from e
+        try:
+            data = resp.json()
+            content = data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, ValueError) as e:
+            raise LLMError(f"LLM 响应格式异常: {resp.text[:200]}") from e
+        if not isinstance(content, str) or not content.strip():
+            raise LLMError(
+                "LLM 返回空内容（content 为 None/空）——"
+                "可能是模型走了工具调用分支或被安全拦截，请重试或换模型"
+            )
+        return content
+    raise LLMError(last_err or "LLM 未知错误")  # 逻辑上不可达，防御性保留
