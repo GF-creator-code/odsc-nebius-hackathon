@@ -22,12 +22,14 @@ import json
 import os
 import sys
 import datetime
+from urllib.parse import urlparse
 
 import llm
-from websearch import get_client, TavilyError
+from websearch import get_client, TavilyError, LOW_TRUST_DOMAINS
+
 
 MAX_ROUNDS = 3          # 最多搜索轮数（首轮 + 至多2轮补搜）
-PER_QUERY_RESULTS = 4   # 每查询每轮取多少条
+PER_QUERY_RESULTS = 3   # 每查询每轮取多少条//原为4:首轮只取9条，留出空间让补搜真正发生
 MAX_SOURCES = 12        # 证据池上限：进提示词与来源列表的条数一致，引用不悬空
 SNIPPET_CHARS = 1200    # 单源正文截断长度（Tavily 的 content 本身已较短，双保险）
 
@@ -39,9 +41,16 @@ PLAN_SYS = (
 JUDGE_SYS = (
     "你是证据评估员。判断现有证据能否回答给定问题。只输出 JSON：\n"
     '{"sufficient": true/false, "reason": "一句话理由", '
-    '"follow_up": ["补充搜索查询", ...]}\n'
-    "follow_up 仅在 sufficient=false 时给出（1-2 个针对性查询，填补具体缺口，不重复已有查询）。"
+    '"coverage": {"<子问题>": true/false, ...},\n'
+    ' "follow_up": ["补充搜索查询", ...]}\n'
+    "规则：\n"
+    "1. 先把问题拆成 2-4 个子问题（涉及多个对照对象的，每个对象单独成项），"
+    "写入 coverage 并逐项标注是否已有独立来源支撑\n"
+    "2. 仅当 coverage 全部为 true 时才判 sufficient=true\n"
+    "3. 有任一项为 false 则判 sufficient=false，follow_up 给 1-2 个针对性查询填补缺口\n"
+    "4. follow_up 不得重复已有查询已覆盖的方向"
 )
+
 
 SYNTH_SYS = (
     "你是严谨的研究员。仅基于给出的证据回答问题，要求：\n"
@@ -71,6 +80,29 @@ def _json_out(text: str) -> dict:
     if start < 0 or end <= start:
         raise ValueError(f"输出中找不到 JSON: {text[:120]}")
     return json.loads(s[start:end + 1])
+
+def _norm_url(url: str) -> str:
+    """规范化 URL 用于去重：抹平协议、www、末尾斜杠、查询串与锚点差异。
+
+    同一篇文章常有 http/https 两个版本被重复收录，若按原始 URL 去重会
+    白占两个来源名额（本次实测中 [7][8] 即为同文）。归一化后两者等价。
+    """
+    u = (url or "").strip().lower()
+    for prefix in ("https://", "http://"):
+        if u.startswith(prefix):
+            u = u[len(prefix):]
+            break
+    if u.startswith("www."):
+        u = u[4:]
+    return u.rstrip("/").split("#")[0].split("?")[0]
+
+
+def _is_low_trust(url: str) -> bool:
+    """判断来源是否属于低可信域名（社交平台、UGC 聚合站），用于证据降权。"""
+    host = urlparse(url).netloc.lower()
+    if host.startswith("www."):
+        host = host[4:]
+    return any(host == d or host.endswith("." + d) for d in LOW_TRUST_DOMAINS)
 
 
 class Trace:
@@ -118,14 +150,21 @@ def judge_evidence(question: str, results: list, trace: Trace) -> dict:
         d = _json_out(out)
         return {"sufficient": bool(d.get("sufficient")),
                 "reason": str(d.get("reason", "")),
+                "coverage": dict(d.get("coverage") or {}),
                 "follow_up": [str(q) for q in d.get("follow_up", []) if q][:2]}
     except Exception as e:
         trace.log(f"[!] 评估失败，视为充分以停止循环：{e}")
-        return {"sufficient": True, "reason": "评估异常，保守停止", "follow_up": []}
+        return {"sufficient":   True, "reason": "评估异常，保守停止",
+                "coverage": {}, "follow_up": []}
+
 
 
 def search_round(queries: list, seen: set, results: list, trace: Trace) -> int:
-    """执行一轮搜索并入池（按 URL 去重），返回本轮新增条数。"""
+    """执行一轮搜索并入池。
+
+    去重口径由「原始 URL」升级为「规范化 URL」，并给每条来源打下降权标记，
+    供证据池排序时使用。返回本轮新增条数。
+    """
     searcher = get_client()
     added = 0
     for q in queries:
@@ -135,11 +174,20 @@ def search_round(queries: list, seen: set, results: list, trace: Trace) -> int:
             trace.log(f"[!] 查询失败（{q}）：{e}")
             continue
         for r in data["results"]:
-            if r["url"] and r["url"] not in seen:
-                seen.add(r["url"])
-                results.append(r)
-                added += 1
+            url = (r.get("url") or "").strip()
+            if not url:
+                trace.log("[跳过] 来源缺少 URL")
+                continue
+            key = _norm_url(url)
+            if key in seen:
+                trace.log(f"[去重] 重复来源跳过：{url}")
+                continue
+            seen.add(key)
+            r["_low_trust"] = _is_low_trust(url)
+            results.append(r)
+            added += 1
     return added
+
 
 
 def gather(question: str, trace: Trace) -> list:
@@ -155,14 +203,29 @@ def gather(question: str, trace: Trace) -> list:
         verdict = judge_evidence(question, results, trace)
         if verdict["sufficient"]:
             trace.log(f"[评估] 证据充分：{verdict['reason']}")
+            trace.log(f"[覆盖度] {verdict['coverage']}")
             break
-        trace.log(f"[评估] 证据不足：{verdict['reason']} → 补搜 {verdict['follow_up']}")
+        miss = [k for k, v in verdict["coverage"].items() if not v]
+        trace.log(f"[评估] 证据不足：{verdict['reason']}")
+        if miss:
+            trace.log(f"[缺口] 未覆盖子问题：{miss}")
+        trace.log(f"[补搜] {verdict['follow_up']}")
         queries = verdict["follow_up"] or queries
 
+          # 降权排序：低可信来源沉到末尾，保证截断时优先淘汰它们而非优质来源
+    low = sum(1 for r in results if r.get("_low_trust"))
+    if low:
+        trace.log(f"[降权] {low} 条低可信来源已排至证据池末尾")
+        results.sort(key=lambda r: r.get("_low_trust", False))
+
     if len(results) > MAX_SOURCES:
-        trace.log(f"[截断] 证据池 {len(results)} 条 → 取前 {MAX_SOURCES} 条进综合")
+        dropped = [r["url"] for r in results[MAX_SOURCES:]]
+        trace.log(f"[截断] 证据池 {len(results)} 条 → 保留 {MAX_SOURCES} 条，淘汰 {len(dropped)} 条")
+        trace.log(f"[淘汰清单] {dropped}")
         results = results[:MAX_SOURCES]
     return results
+
+
 
 
 def synthesize(question: str, results: list) -> str:

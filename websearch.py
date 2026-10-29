@@ -22,6 +22,18 @@ TIMEOUT = 30
 RETRIES = 2          # 瞬时失败重试次数
 BACKOFF = (1, 3)     # 每次重试前等待秒数
 
+# 低可信来源域名：社交平台与 UGC 聚合站。
+# 命中者不丢弃而是"降权"——排到证据池末尾，超过上限时被优先淘汰，
+# 既避免误杀有用中文资料，又保证优质来源优先进入上下文（对应 30% 有据可查）。
+LOW_TRUST_DOMAINS = frozenset({
+    # 社交平台
+    "reddit.com", "twitter.com", "x.com", "weibo.com", "quora.com",
+    "facebook.com", "zhihu.com", "tieba.baidu.com",
+    # UGC / 聚合 / 自媒体
+    "medium.com", "blogspot.com", "csdn.net", "jianshu.com", "toutiao.com",
+    "eastmoney.com", "baijiahao.baidu.com", "sohu.com",
+})
+
 _session = requests.Session()
 
 
