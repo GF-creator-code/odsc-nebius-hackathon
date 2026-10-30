@@ -64,10 +64,10 @@ python agent.py "任意问题" --trace    # 另存研究轨迹到 traces/
 
 ## 当前待办（按优先级）
 
-1. **接入 Nebius Token Factory**（队长负责）：tokenfactory.nebius.com 开 key，改 `.env` 三行即完成切换，然后跑端到端验证
+1. **接入 Nebius Token Factory**（队长负责，暂缓）：tokenfactory.nebius.com 开 key，改 `.env` 三行即完成切换，然后跑端到端验证
 2. **来源质量过滤**：搜索结果按域名/类型降权或过滤低质来源（社交媒体、聚合站），提升 30% 那项的证据质量
-3. **Streamlit 演示界面**：输入框 → 展示回答 + 可点击来源 + 研究轨迹；参考结构见下文"界面要求"
-4. **README 完善**：架构图、安装步骤（评委复现用）、研究轨迹示例（用 traces/ 里的真实样例）
+3. **Streamlit 演示界面**：输入框 → 展示回答 + 可点击来源 + 研究轨迹；具体要求见下文"界面要求"；README 里的"How it works"流程图与速览可作界面信息架构参考
+4. ~~README 完善~~（队长已完成：英文版含架构图/真实示例/设计决策对照表；后续若改动核心流程，记得同步 README 的流程图与 Example）
 
 ### 界面要求（做第 3 项时）
 

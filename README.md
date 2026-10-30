@@ -1,30 +1,92 @@
-# ODSC × Nebius Hackathon — KK_yuanqu
+# Sourced · A Research Agent That Brings Its Sources
 
-题目：构建把问题变成**有来源、可验证回答**的研究型 Agent。
-- 推理：Nebius Token Factory（待配置）
-- 搜索：Tavily（本目录已就绪）
+> Turning a question into a **sourced, verifiable answer** — every claim carries a citation you can open and check.
 
-## 配置步骤
+ODSC × Nebius Hackathon 2026 · Team **KK_yuanqu** · Oct 28 – Nov 20
 
-1. `cp .env.example .env`（Windows: `copy .env.example .env`）
-2. 到 [app.tavily.com](https://app.tavily.com) 注册（免费，无需信用卡），控制台复制 `tvly-` 开头的 key，填入 `.env` 的 `TAVILY_API_KEY=`
-3. 验证：`python test_tavily.py` —— 应打印综合答案 + 3 条带链接来源
+**Sourced** is a research agent for anyone who needs answers they can defend — students writing papers, analysts briefing clients, engineers comparing technologies. Search engines give you links; chatbots give you confident prose. Sourced gives you a synthesized answer where **every factual claim is tied to a numbered, clickable source**, and when the evidence isn't there, it says so instead of inventing.
 
-## 快速开始
+## How it works
 
-```bash
-pip install -r requirements.txt   # 目前仅依赖 requests
-copy .env.example .env            # Linux/macOS 用 cp；然后填入自己的 TAVILY_API_KEY
-python test_tavily.py             # 验证搜索链路：应打印综合答案 + 3 条带链接来源
-python agent.py "你的研究问题"      # 端到端：带 [n] 引用的回答 + 来源列表
+```mermaid
+flowchart TD
+    Q[User question] --> P[Plan: LLM generates 2-3 complementary queries<br/>zh + en coverage]
+    P --> S[Search: Tavily real-time web search<br/>dedupe by URL, cap pool at 12]
+    S --> J{Judge: LLM evaluates<br/>is the evidence sufficient?}
+    J -- "insufficient" --> F[Refine: 1-2 targeted follow-up queries<br/>max 3 rounds total]
+    F --> S
+    J -- sufficient --> A[Synthesize: evidence injected as UNTRUSTED data,<br/>separate from trusted system instructions]
+    A --> R[Answer with inline [n] citations<br/>+ numbered source list]
+    J -- "search failed / empty" --> X[Honestly report insufficient evidence<br/>never fabricate]
 ```
 
-## 项目结构
-- `agent.py` — 研究主体：规划检索 → Tavily 取证（按 URL 去重）→ LLM 综合 → 带引用回答
-- `websearch.py` — Tavily 客户端（`get_client().search(query)`）
-- `llm.py` — 可插拔推理层（`.env` 三行即可切换供应商）
-- `test_tavily.py` — 搜索链路自检
-- `.env.example` — 密钥模板；`.env` 被 gitignore，**key 绝不进仓库**（评分硬性要求）
+**The research loop is visible.** Every run prints (and with `--trace` saves) its full decision trace: what queries were planned, how many sources each round added, why the agent stopped searching, and what the final answer cites. See [a real trace](traces/20261029_201654.md).
 
-## 提交物（2026-11-20 截止）
-公开仓库 + README（安装运行步骤、架构概览、研究轨迹）+ 短 demo（真实 API 调用，含一个证据不足案例）
+### Design decisions, mapped to what good research looks like
+
+| Decision | Why |
+|---|---|
+| Citations `[n]` must resolve to a real URL in the source list — no dangling refs | A citation that can't be opened is decoration, not evidence |
+| Judge step decides *continue vs stop* searching (max 3 rounds) | More searches ≠ better answers; stop when evidence converges |
+| Web content is injected as **untrusted data**, never merged into system instructions | Source pages may contain prompt-injection attempts |
+| Search failures, empty pools, and thin evidence are **reported, never smoothed over** | "I couldn't verify this" is a valid research output; hallucinated certainty is not |
+| Conflicting sources are surfaced in the answer, not averaged away | Reviewers need to know where evidence disagrees |
+
+## Quick start
+
+Requirements: Python 3.10+, a [Tavily](https://app.tavily.com) API key (free tier: 1,000 calls/month), and any OpenAI-compatible inference key.
+
+```bash
+pip install -r requirements.txt
+cp .env.example .env        # Windows: copy .env.example .env
+# edit .env:
+#   TAVILY_API_KEY=tvly-...          (from app.tavily.com)
+#   LLM_BASE_URL / LLM_API_KEY / LLM_MODEL   (any OpenAI-compatible endpoint)
+python test_tavily.py       # verifies the search path end-to-end
+python agent.py "What won the 2026 Nobel Prize in Physics, and for what work?"
+```
+
+The inference layer is deliberately pluggable (`llm.py`): switching providers — e.g. to Nebius Token Factory — is a three-line `.env` change, no code edits. API keys live only in `.env`, which is git-ignored.
+
+### Example output (real run)
+
+> **结论：**2026年诺贝尔物理学奖授予弗朗西斯·哈尔岑（Francis Halzen），获奖理由是"对冰立方中微子天文台（IceCube Neutrino Observatory）的决定性贡献，以及发现具有天体物理起源的高能中微子"[5][8]。……
+> **一点必要的限定：**委员会同时指出，这些超高能中微子目前尚未有确定的源被证认，只有很强的迹象[7]。因此，获奖理由中的"发现"指的是发现这些高能中微子本身，而非确定其具体天体源[7]。
+>
+> 来源：[1] RFI … [5] Nobel Prize official announcement … [7] nobelprize.org/prizes/physics/2026/prize-announcement …
+
+Notice the shape of the answer: conclusion first, claims cited, and an explicit limitation where the evidence is indirect — that paragraph is the product.
+
+## Repository layout
+
+| File | Role |
+|---|---|
+| `agent.py` | Research loop: plan → search → judge → synthesize, prompts, trace logging |
+| `websearch.py` | Tavily client with retries, explicit failure modes (auth / quota / network) |
+| `llm.py` | Pluggable OpenAI-compatible inference client |
+| `tests/test_pure.py` | Offline unit tests (JSON tolerance, pool caps, trace saving) — no API spend |
+| `traces/` | Saved research traces from real runs, used as demo material |
+
+## Error handling policy
+
+The agent never silently degrades: auth errors, quota exhaustion, malformed responses, and empty result pools each raise a specific, actionable error; when searches fail or evidence is thin, the final output says so plainly and identifies what's missing. Fabricated facts or citations are treated as the worst possible failure mode.
+
+## Status & roadmap
+
+- [x] Core loop: multi-round search with sufficiency judging, citation discipline, trace files
+- [x] Robustness: retries with backoff, response validation, UTF-8 console, prompt-size caps
+- [x] Offline test suite
+- [ ] Web UI (Streamlit): clickable citations, live research trace
+- [ ] Source-quality filtering (down-rank social/aggregator domains)
+- [ ] Final inference on Nebius Token Factory (`.env` switch, pending key)
+- [ ] Demo video
+
+## Team
+
+KK_yuanqu — [GF-creator-code](https://github.com/GF-creator-code) · [Hkate777](https://github.com/Hkate777)
+
+---
+
+### 中文速览（团队内部）
+
+研究型 Agent：问题 → 规划查询 → Tavily 实时搜索（去重）→ 证据充分性评估（不足则定向补搜，最多 3 轮）→ 带行内 `[n]` 引用的综合回答 + 编号来源列表。证据不足时如实声明，绝不编造；网页内容作为不可信数据与系统指令隔离（防提示注入）。运行 `python agent.py "问题" --trace` 可保存完整研究轨迹。开发规范见 [AGENTS.md](AGENTS.md)。
