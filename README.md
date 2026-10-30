@@ -20,7 +20,7 @@ flowchart TD
     J -- "search failed / empty" --> X[Honestly report insufficient evidence<br/>never fabricate]
 ```
 
-**The research loop is visible.** Every run prints (and with `--trace` saves) its full decision trace: what queries were planned, how many sources each round added, why the agent stopped searching, and what the final answer cites. See [a real trace](traces/20261029_201654.md).
+**The research loop is visible.** Every run prints (and with `--trace` saves) its full decision trace: what queries were planned, how many sources each round added, why the agent stopped searching, and what the final answer cites. See [a real trace](traces/20261031_004646.md).
 
 ### Design decisions, mapped to what good research looks like
 
@@ -74,22 +74,22 @@ The inference layer is deliberately pluggable (`llm.py`): switching providers �
 
 Notice the shape of the answer: conclusion first, claims cited, and an explicit limitation where the evidence is indirect — that paragraph is the product.
 
-### Verified runs — Four real traces
+### Verified runs — four real traces
 
 Every run below is a saved trace in [`traces/`](traces/), produced by an unmodified `agent.py` against live Tavily + LLM endpoints.
 
 | Trace | Question | Rounds (pool size) | Sources cited | Outcome |
 |---|---|---|---|---|
-| [`20261030_163023`](traces/20261030_163023.md) | China vs India 2026 GDP | 3 (8 → 11 → 14) | 12 | Converged — coverage checklist fully satisfied |
-| [`20261030_150405`](traces/20261030_150405.md) | Current policy rates of major central banks | 3 (5 → 9 → 11) | 11 | Answered **with an explicit conflict warning** |
-| [`20261030_204806`](traces/20261030_204806.md) | Huawei Ascend 910C deployments in European data centres | 3 (9 → 11 → 14) | 12 | **Insufficient evidence — stated, not invented** |
+| [`20261030_163023`](traces/20261030_163023.md) | China vs India 2026 GDP | 2 (7 → 11) | 11 | Converged — coverage checklist fully satisfied |
+| [`20261030_150405`](traces/20261030_150405.md) | Current policy rates of major central banks | 2 (8 → 13) | 12 | Answered **with an explicit conflict warning** |
+| [`20261030_204806`](traces/20261030_204806.md) | Huawei Ascend 910C deployments in European data centres | 3 (8 → 13 → 13) | 12 | **Insufficient evidence — stated, not invented** |
 | [`20261031_004646`](traces/20261031_004646.md) | 2026 Nobel Prize in Physics | 3 (6 → 8 → 12) | 9 of 12 | Converged; the 2 social-platform sources in the pool went uncited |
 
 **What each run demonstrates**
 
-1. **Targeted follow-up, not blind re-searching.** In the GDP run the judge decomposed the question into sub-questions, found *India's 2026 GDP level* unsupported after round 1, and issued a query aimed at exactly that gap; round 2 filled it. Rounds are driven by per-sub-question coverage, not a fixed schedule.
-2. **Source ranking is observable, never silent.** The GDP trace demoted 3 social-platform sources to the tail, then capped the pool 14 → 12 and recorded **which** entries were dropped (two Facebook posts). The Ascend run dropped two `cn.investing.com` pages the same way. Discards are named in the trace.
-3. **"I couldn't verify this" is a valid output.** The Ascend 910C question exhausted all 3 rounds without a single European deployment case. The agent said so, explained why each source failed to qualify ([1][2] are China-domestic, [5][6] don't mention the 910C), and listed what evidence would settle it.
+1. **Targeted follow-up, not blind re-searching.** In the GDP run the judge decomposed the question into sub-questions, found *both countries' 2026 nominal GDP levels* unsupported after round 1, and issued a query aimed at exactly that gap; round 2 filled it. Rounds are driven by per-sub-question coverage, not a fixed schedule.
+2. **Source ranking is observable, never silent.** Every trace names both its demotions and its discards. The Ascend run demoted 3 social-platform sources, then capped the pool 13 → 12 and recorded **which** entry was dropped (a `zhuanlan.zhihu.com` page). The central-bank run dropped `cn.investing.com` the same way. In the GDP run the single demoted source stayed under the cap — it was kept, and simply never cited.
+3. **"I couldn't verify this" is a valid output.** The Ascend 910C question exhausted all 3 rounds without a single European deployment case. The agent said so, explained why the sources fail to qualify ([4] ships to Chinese customers, [8] quotes Huawei saying it will not expand internationally, [3][6][9] describe China-only data-centre deployments), and listed what evidence would settle it.
 4. **Conflicts are surfaced, not averaged away.** The central-bank run found rates spanning Sept 2025 – Oct 2026 with contradictory figures for the same bank, and reported the spread instead of picking one number.
 5. **Demotion is not deletion — but its downstream effect is visible.** In the Nobel run ([`20261031_004646`](traces/20261031_004646.md)) the pool held 12 sources after 3 rounds, yet the answer cites only 9: the two Facebook/Reddit entries ranked to the tail were never cited. Low-trust sources stay in the pool and are never silently dropped — they simply end up unused, because ranking alone is enough to steer the model away from them.
 
