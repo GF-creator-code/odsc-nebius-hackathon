@@ -17,6 +17,23 @@ AGGREGATOR = {
 }
 
 
+def norm_url(url: str) -> str:
+    """URL 规范化（去重口径）：抹平协议、www、末尾斜杠、查询串与锚点差异。
+
+    同一篇文章常有 http/https 两个版本被重复收录，按原始 URL 去重会白占
+    两个来源名额（实测中出现过 [7][8] 即为同文）。归一化后两者等价；
+    不同路径不受影响。来自 Hkate777 PR#1 的改进。
+    """
+    u = (url or "").strip().lower()
+    for prefix in ("https://", "http://"):
+        if u.startswith(prefix):
+            u = u[len(prefix):]
+            break
+    if u.startswith("www."):
+        u = u[4:]
+    return u.rstrip("/").split("#")[0].split("?")[0]
+
+
 def domain_of(url: str) -> str:
     """取注册域名（去 www 等前缀、去路径）。畸形 URL 返回空串。"""
     try:

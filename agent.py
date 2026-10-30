@@ -28,11 +28,12 @@ import re
 import sys
 
 import llm
-from quality import rank_sources, demoted_counts
+from quality import rank_sources, demoted_counts, norm_url
 from websearch import get_client, TavilyError
 
 MAX_ROUNDS = 3          # 最多搜索轮数（首轮 + 至多2轮补搜）
-PER_QUERY_RESULTS = 4   # 每查询每轮取多少条
+PER_QUERY_RESULTS = 3   # 每查询每轮取多少条。原为4：首轮即满9-12条，补搜没有发生空间；
+                        # 调小留额度给 follow-up，让"评估→补搜"循环真正可触发（Hkate777 PR#1）
 MAX_SOURCES = 12        # 证据池上限：进提示词与来源列表的条数一致，引用不悬空
 SNIPPET_CHARS = 1200    # 单源正文截断长度（Tavily 的 content 本身已较短，双保险）
 
@@ -44,8 +45,14 @@ PLAN_SYS = (
 JUDGE_SYS = (
     "你是证据评估员。判断现有证据能否回答给定问题。只输出 JSON：\n"
     '{"sufficient": true/false, "reason": "一句话理由", '
+    '"coverage": {"<子问题>": true/false, ...}, '
     '"follow_up": ["补充搜索查询", ...]}\n'
-    "follow_up 仅在 sufficient=false 时给出（1-2 个针对性查询，填补具体缺口，不重复已有查询）。"
+    "规则：\n"
+    "1. 先把问题拆成 2-4 个子问题（涉及多个对照对象的，每个对象单独成项），"
+    "写入 coverage 并逐项标注是否已有独立来源支撑\n"
+    "2. 仅当 coverage 全部为 true 时才判 sufficient=true\n"
+    "3. 有任一项为 false 则判 sufficient=false，follow_up 给 1-2 个针对性查询填补缺口\n"
+    "4. follow_up 不得重复已有查询已覆盖的方向（Hkate777 PR#1：覆盖度评估）"
 )
 
 SYNTH_SYS = (
@@ -107,22 +114,26 @@ def plan_queries(question: str):
 
 
 def judge_evidence(question: str, results: list) -> dict:
-    """评估证据是否充分；异常时保守视为充分（避免死循环烧额度）。"""
+    """评估证据是否充分（覆盖度口径）；异常时保守视为充分（避免死循环烧额度）。"""
     try:
         evidence = "\n".join(f"[{i}] {r['title']}: {r['content'][:150]}"
                              for i, r in enumerate(results, 1))
         out = llm.chat([{"role": "system", "content": JUDGE_SYS},
                         {"role": "user", "content": f"问题：{question}\n\n证据摘要：\n{evidence}"}])
         d = _json_out(out)
+        coverage = {str(k): bool(v) for k, v in dict(d.get("coverage") or {}).items()}
         return {"sufficient": bool(d.get("sufficient")),
                 "reason": str(d.get("reason", "")),
+                "coverage": coverage,
                 "follow_up": [str(q) for q in d.get("follow_up", []) if q][:2]}
     except Exception as e:
-        return {"sufficient": True, "reason": f"评估异常，保守停止：{e}", "follow_up": []}
+        return {"sufficient": True, "reason": f"评估异常，保守停止：{e}",
+                "coverage": {}, "follow_up": []}
 
 
 def search_round(queries: list, seen: set, results: list):
-    """执行一轮搜索并入池（按 URL 去重），返回 (新增条数, 失败信息列表)。"""
+    """执行一轮搜索并入池。去重口径用规范化 URL（同文 http/https 版本不重复占位，
+    Hkate777 PR#1）。返回 (新增条数, 失败信息列表)。"""
     searcher = get_client()
     added, errors = 0, []
     for q in queries:
@@ -132,8 +143,9 @@ def search_round(queries: list, seen: set, results: list):
             errors.append(f"[!] 查询失败（{q}）：{e}")
             continue
         for r in data["results"]:
-            if r["url"] and r["url"] not in seen:
-                seen.add(r["url"])
+            key = norm_url(r["url"])
+            if key and key not in seen:
+                seen.add(key)
                 results.append(r)
                 added += 1
     return added, errors
@@ -163,11 +175,14 @@ def research_events(question: str):
         if not results:
             break
         verdict = judge_evidence(question, results)
+        gaps = [k for k, v in verdict["coverage"].items() if not v]
         if verdict["sufficient"]:
-            yield {"type": "judge", "sufficient": True, "reason": verdict["reason"]}
+            yield {"type": "judge", "sufficient": True, "reason": verdict["reason"],
+                   "coverage": verdict["coverage"]}
             break
         yield {"type": "judge", "sufficient": False,
-               "reason": verdict["reason"], "follow_up": verdict["follow_up"]}
+               "reason": verdict["reason"], "gaps": gaps,
+               "follow_up": verdict["follow_up"]}
         queries = verdict["follow_up"] or queries
 
     # 结构性质量排序：一手来源在前，社媒/聚合站降权（只降权不删除）
@@ -177,7 +192,9 @@ def research_events(question: str):
     results = rank_sources(results)
 
     if len(results) > MAX_SOURCES:
-        yield {"type": "cap", "before": len(results), "after": MAX_SOURCES}
+        dropped = [r["url"] for r in results[MAX_SOURCES:]]
+        yield {"type": "cap", "before": len(results), "after": MAX_SOURCES,
+               "dropped": dropped}  # 淘汰清单入轨迹，截断不静默（Hkate777 PR#1）
         results = results[:MAX_SOURCES]
 
     if not results:
@@ -218,13 +235,19 @@ def _event_line(ev: dict) -> str:
         return "\n".join(filter(None, [base] + ev.get("errors", [])))
     if t == "judge":
         if ev["sufficient"]:
-            return f"[评估] 证据充分：{ev['reason']}"
-        return f"[评估] 证据不足：{ev['reason']} → 补搜 {ev.get('follow_up', [])}"
+            cov = ev.get("coverage") or {}
+            cov_line = f"（覆盖度：{cov}）" if cov else ""
+            return f"[评估] 证据充分：{ev['reason']}{cov_line}"
+        gaps = ev.get("gaps") or []
+        gap_line = f"\n[缺口] 未覆盖子问题：{gaps}" if gaps else ""
+        return f"[评估] 证据不足：{ev['reason']}{gap_line}\n[补搜] {ev.get('follow_up', [])}"
     if t == "rank":
         return (f"[排序] 降权：内容聚合站 {ev['aggregator']} 条、"
                 f"社交平台 {ev['social']} 条（不删除，仅后置）")
     if t == "cap":
-        return f"[截断] 证据池 {ev['before']} 条 → 取前 {ev['after']} 条进综合"
+        dropped = ev.get("dropped") or []
+        drop_line = f"，淘汰 {len(dropped)} 条：{dropped}" if dropped else ""
+        return f"[截断] 证据池 {ev['before']} 条 → 保留 {ev['after']} 条{drop_line}"
     return ""
 
 

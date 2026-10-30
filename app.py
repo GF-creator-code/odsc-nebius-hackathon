@@ -97,9 +97,13 @@ if run and question.strip():
                 _flush("🧠 评估证据是否充分…")
             elif t == "judge":
                 if ev["sufficient"]:
-                    lines.append(f"✅ 证据充分，停止搜索：{ev['reason']}")
+                    cov = ev.get("coverage") or {}
+                    lines.append(f"✅ 证据充分，停止搜索：{ev['reason']}"
+                                 + (f"｜覆盖度 {list(cov.keys())}" if cov else ""))
                 else:
-                    lines.append(f"➕ 证据不足，补搜：{ev['reason']}")
+                    lines.append(f"➕ 证据不足：{ev['reason']}")
+                    if ev.get("gaps"):
+                        lines.append(f"🕳 未覆盖子问题：{ev['gaps']}")
                 _flush("🧠 评估证据是否充分…")
             elif t == "rank":
                 lines.append(f"⚖️ 降权：聚合站 {ev['aggregator']} 条 / "
@@ -107,7 +111,8 @@ if run and question.strip():
                 _flush("📝 综合答案中…")
                 status.update(label="📝 Synthesizing answer…")
             elif t == "cap":
-                lines.append(f"✂️ 证据池 {ev['before']} → {ev['after']} 条")
+                lines.append(f"✂️ 证据池 {ev['before']} → {ev['after']} 条"
+                             + (f"（淘汰 {len(ev.get('dropped', []))} 条）" if ev.get("dropped") else ""))
                 _flush("📝 综合答案中…")
             elif t == "answer":
                 answer, sources = ev["text"], ev["sources"]

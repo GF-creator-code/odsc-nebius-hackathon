@@ -9,7 +9,8 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from agent import _json_out, MAX_SOURCES, SNIPPET_CHARS, linkify_citations  # noqa: E402
-from quality import domain_of, source_tier, rank_sources, demoted_counts  # noqa: E402
+from quality import (domain_of, source_tier, rank_sources,  # noqa: E402
+                     demoted_counts, norm_url)
 
 
 def test_json_out_variants():
@@ -61,6 +62,20 @@ def test_linkify_citations():
     print("[ok] 引用链接化（含越界保护）")
 
 
+def test_norm_url_dedup():
+    # 同文的 http/https、www、查询串、末尾斜杠差异必须视作同一条（Hkate777 PR#1）
+    pairs = [
+        ("http://www.a.com/x/", "https://a.com/x"),
+        ("https://a.com/x?from=search", "http://a.com/x"),
+        ("HTTPS://A.COM/X#top", "http://www.a.com/x"),
+    ]
+    for a, b in pairs:
+        assert norm_url(a) == norm_url(b), f"应等价: {a} vs {b}"
+    assert norm_url("https://a.com/x") != norm_url("https://a.com/y")  # 不同路径不误杀
+    assert norm_url("") == ""  # 空值不炸（防御 URL 缺失的来源）
+    print("[ok] URL 规范化去重")
+
+
 def test_quality_ranking():
     assert domain_of("https://www.nobelprize.org/prizes/physics") == "nobelprize.org"
     assert domain_of("https://x.com/someone/status/1") == "x.com"
@@ -83,5 +98,6 @@ if __name__ == "__main__":
     test_snippet_truncation()
     test_trace_save()
     test_linkify_citations()
+    test_norm_url_dedup()
     test_quality_ranking()
     print("\n[✓] 全部纯逻辑测试通过")
