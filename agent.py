@@ -267,8 +267,11 @@ def research(question: str, trace_path: str = None) -> str:
         output = format_output(answer, sources)
         with open(trace_path, "w", encoding="utf-8") as f:
             f.write(f"# 研究轨迹 · {datetime.datetime.now():%Y-%m-%d %H:%M:%S}\n\n"
+                    f"推理端点：{os.environ.get('LLM_BASE_URL') or llm.DEFAULT_BASE}\n"
+                    f"推理模型：{os.environ.get('LLM_MODEL') or llm.DEFAULT_MODEL}\n\n"
                     f"## 问题\n{question}\n\n## 过程\n" + "\n".join(lines) +
                     f"\n\n## 最终回答\n{output}\n")
+
     return format_output(answer or INSUFFICIENT_MSG, sources)
 
 

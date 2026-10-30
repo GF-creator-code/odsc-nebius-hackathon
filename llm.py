@@ -1,11 +1,12 @@
 """LLM 推理客户端（可插拔）
 
-默认走 OpenCode 网关（zenmux.ai，OpenAI 兼容），key 自动从 OpenCode 登录文件读取。
-比赛要求最终用 Nebius Token Factory——届时只需在 .env 设置：
-    LLM_BASE_URL=<Token Factory 端点，见官方文档>
+默认端点为 Nebius Token Factory（OpenAI 兼容），可用 .env 覆盖：
+    LLM_BASE_URL=https://api.tokenfactory.nebius.com/v1
     LLM_API_KEY=<nebius key>
-    LLM_MODEL=<开源模型名>
+    LLM_MODEL=MiniMaxAI/MiniMax-M3
+未设置 LLM_API_KEY 时回退读取 OpenCode 登录文件（本地开发便利）。
 其余代码零改动。
+
 
 加固点：
 - 瞬时失败（网络/429/5xx）指数退避重试，最多 2 次；鉴权错误快速失败
@@ -20,6 +21,8 @@ import time
 import requests
 
 TIMEOUT = 120
+DEFAULT_BASE = "https://api.tokenfactory.nebius.com/v1"
+DEFAULT_MODEL = "MiniMaxAI/MiniMax-M3"
 RETRIES = 2
 BACKOFF = (2, 5)
 
@@ -57,9 +60,9 @@ def _opencode_key() -> str:
 def chat(messages: list, model: str = None, temperature: float = 0.2) -> str:
     """OpenAI 兼容 chat completions，返回首条回复文本。失败抛 LLMError，绝不静默。"""
     load_env()
-    base = os.environ.get("LLM_BASE_URL", "https://api.tokenfactory.nebius.com/v1").rstrip("/")
+    base = os.environ.get("LLM_BASE_URL", DEFAULT_BASE).rstrip("/")
     key = os.environ.get("LLM_API_KEY", "").strip() or _opencode_key()
-    model = model or os.environ.get("LLM_MODEL", "MiniMaxAI/MiniMax-M3")
+    model = model or os.environ.get("LLM_MODEL", DEFAULT_MODEL)
     if not key:
         raise LLMError("无 LLM key：设置 LLM_API_KEY，或登录 OpenCode 以便自动读取")
 
