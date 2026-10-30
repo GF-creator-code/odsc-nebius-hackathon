@@ -40,8 +40,11 @@ Requirements: Python 3.10+, a [Tavily](https://app.tavily.com) API key (free tie
 pip install -r requirements.txt
 cp .env.example .env        # Windows: copy .env.example .env
 # edit .env:
-#   TAVILY_API_KEY=tvly-...          (from app.tavily.com)
-#   LLM_BASE_URL / LLM_API_KEY / LLM_MODEL   (any OpenAI-compatible endpoint)
+#   TAVILY_API_KEY=tvly-...                          (from app.tavily.com)
+#   LLM_BASE_URL=https://api.tokenfactory.nebius.com/v1
+#   LLM_API_KEY=...                                  (Nebius Token Factory)
+#   LLM_MODEL=MiniMaxAI/MiniMax-M3
+
 python test_tavily.py       # verifies the search path end-to-end
 ```
 
@@ -116,7 +119,7 @@ The agent never silently degrades: auth errors, quota exhaustion, malformed resp
 - [x] Source-quality ranking (social/aggregator demotion, never silent deletion)
 - [x] Web UI (Streamlit): clickable citations, live research trace
 - [x] Offline test suite
-- [ ] Final inference on Nebius Token Factory (`.env` switch, pending key)
+- [x] **Inference on Nebius Token Factory** — live on `https://api.tokenfactory.nebius.com/v1` with `MiniMaxAI/MiniMax-M3`; three-line `.env` switch (see `.env.example`)
 - [ ] Demo video
 
 ## Team

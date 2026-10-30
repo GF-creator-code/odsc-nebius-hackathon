@@ -72,7 +72,7 @@ python agent.py "任意问题" --trace    # 另存研究轨迹到 traces/
 
 ## 当前待办（按优先级）
 
-1. **接入 Nebius Token Factory**（队长负责，暂缓）：tokenfactory.nebius.com 开 key，改 `.env` 三行即完成切换，然后跑端到端验证（最晚 2026-11-15，提交硬门槛）
+1. ~~接入 Nebius Token Factory~~（已完成并实测：`api.tokenfactory.nebius.com/v1` + `MiniMaxAI/MiniMax-M3`；`.env.example` 已同步为 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL 三个字段）
 2. ~~来源质量过滤~~（队长已完成：`quality.py` 结构性降权——社交/聚合站后置不删除，纯函数带测试）
 3. ~~Streamlit 演示界面~~（队长已完成：`app.py` 事件流适配，可点击引用+实时轨迹+证据不足原样呈现；`streamlit run app.py`）
 4. ~~README 完善~~（队长已完成：英文版含架构图/真实示例/设计决策对照表；后续若改动核心流程，记得同步 README 的流程图与 Example）

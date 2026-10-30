@@ -57,9 +57,9 @@ def _opencode_key() -> str:
 def chat(messages: list, model: str = None, temperature: float = 0.2) -> str:
     """OpenAI 兼容 chat completions，返回首条回复文本。失败抛 LLMError，绝不静默。"""
     load_env()
-    base = os.environ.get("LLM_BASE_URL", "https://zenmux.ai/api/v1").rstrip("/")
+    base = os.environ.get("LLM_BASE_URL", "https://api.tokenfactory.nebius.com/v1").rstrip("/")
     key = os.environ.get("LLM_API_KEY", "").strip() or _opencode_key()
-    model = model or os.environ.get("LLM_MODEL", "z-ai/glm-5.3-flash")
+    model = model or os.environ.get("LLM_MODEL", "MiniMaxAI/MiniMax-M3")
     if not key:
         raise LLMError("无 LLM key：设置 LLM_API_KEY，或登录 OpenCode 以便自动读取")
 
