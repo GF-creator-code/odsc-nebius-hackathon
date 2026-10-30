@@ -15,6 +15,14 @@ AGGREGATOR = {
     "medium.com", "substack.com", "csdn.net", "jianshu.com", "toutiao.com",
     "163.com", "sohu.com", "baijiahao.baidu.com",
 }
+# 券商/股评/咨询自媒体：常见形态是转述二手数据并给出无一手出处的份额、股价数字。
+# 实测它们会排在证据池前列并输出未交叉验证的断言（如"AMD 涨 125%"），故与聚合站
+# 同档（tier 1）降权。仍只降权不删除——其中文行业信息有时有补充价值。
+SELFMEDIA = {
+    "tradingkey.com", "sharpertrades.com", "datamintelligence.com",
+    "dataknobs.com", "oplexa.com", "siliconanalysts.com",
+    "investing.com", "benzinga.com", "stocktwits.com", "eastmoney.com",
+}
 
 
 def norm_url(url: str) -> str:
@@ -31,7 +39,12 @@ def norm_url(url: str) -> str:
             break
     if u.startswith("www."):
         u = u[4:]
-    return u.rstrip("/").split("#")[0].split("?")[0]
+    u = u.rstrip("/").split("#")[0].split("?")[0]
+    # AMP 移动版与桌面版是同一篇：/amp/2024/06/27/x 与 /2024/06/27/x 等价。
+    # 只丢弃独立的 "amp" 路径段，真实以 amp- 开头的路径段不受影响。
+    host, _, path = u.partition("/")
+    segs = [s for s in path.split("/") if s and s != "amp"]
+    return host + ("/" + "/".join(segs) if segs else "")
 
 
 def domain_of(url: str) -> str:
@@ -48,11 +61,11 @@ def domain_of(url: str) -> str:
 
 
 def source_tier(url: str) -> int:
-    """0=普通来源（默认） 1=内容聚合/博客平台 2=社交平台。"""
+    """0=普通来源（默认） 1=内容聚合/博客平台/自媒体 2=社交平台。"""
     d = domain_of(url)
     if d in SOCIAL:
         return 2
-    if d in AGGREGATOR:
+    if d in AGGREGATOR or d in SELFMEDIA:
         return 1
     return 0
 

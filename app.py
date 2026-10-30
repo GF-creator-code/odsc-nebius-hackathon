@@ -38,6 +38,12 @@ def _use_example(ex: str) -> None:
     st.session_state["question"] = ex
     st.session_state["autorun"] = True
 
+def _go_home() -> None:
+    """清空上次结果与输入，回到空白主页（回调在重渲染前执行，点击即生效）。"""
+    st.session_state.pop("last_result", None)
+    st.session_state.pop("autorun", None)
+    st.session_state["question"] = ""
+
 
 question = st.text_input("Your research question", key="question",
                          placeholder="Ask anything you need to verify…")
@@ -141,9 +147,12 @@ if run and question.strip():
         "trace": lines, "answer": answer, "sources": sources, "label": label,
         "state": "complete" if sources else "error",
     }
+    st.button("🏠 返回主页（开始新的研究）", on_click=_go_home, use_container_width=True)
+
 else:
     # 非运行的交互（输入、点击）不丢结果：恢复上次完成态
     last = st.session_state.get("last_result")
     if last:
         _render_result(ph.container(), last["trace"], last["answer"],
                        last["sources"], last["label"], last["state"])
+        st.button("🏠 返回主页（开始新的研究）", on_click=_go_home, use_container_width=True)
