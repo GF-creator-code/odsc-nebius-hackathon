@@ -1,16 +1,19 @@
 """Sourced — 研究型 Agent 的 Web 界面（Streamlit 薄适配层）
 
-启动：streamlit run app.py
+启动：streamlit run app.py   （或 python -m streamlit run app.py）
 定位通用：不绑定任何专业领域，问题由用户自由输入。
 
 工程要点：
 - 只消费 agent.research_events() 事件流，不复制任何核心逻辑
+- 阶段化实时反馈（st.status）：规划/搜索/评估/综合每步可见，长任务不"假死"
+- 结果占位符每次运行在同一路径重建（st.empty）→ 新研究开始"立即"替换旧结果；
+  上次完成的结果存 session_state，非运行的重渲染时恢复，交互不会清屏
 - 引用 [n] 渲染为可点击链接（评委现场核验）
-- 研究轨迹实时展示（15% 展示面）；"证据不足"原样呈现，不美化
+- "证据不足"原样呈现，不美化；异常显式报错，绝不静默
 """
 
-import sys
 import os
+import sys
 
 import streamlit as st
 
@@ -30,53 +33,112 @@ EXAMPLES = [
     "一家公司要出海东南亚，目前各主要国家的企业所得税率是多少？",
 ]
 
-question = st.text_input("Your research question", placeholder="Ask anything you need to verify…")
+
+def _use_example(ex: str) -> None:
+    st.session_state["question"] = ex
+    st.session_state["autorun"] = True
+
+
+question = st.text_input("Your research question", key="question",
+                         placeholder="Ask anything you need to verify…")
 col1, _ = st.columns([1, 3])
-run = col1.button("Research", type="primary", use_container_width=True)
+run = col1.button("Research", type="primary", use_container_width=True) \
+    or st.session_state.pop("autorun", False)
 
 if not question.strip():
+    st.caption("Try an example:")
     for ex in EXAMPLES:
-        if st.button(ex, key=ex):
-            question = ex
-            run = True
-            break
+        st.button(ex, on_click=_use_example, args=(ex,), use_container_width=True)
+
+
+def _render_result(box, trace_lines: list, answer: str, sources: list,
+                   label: str, state: str) -> None:
+    """把一份完成的研究结果渲染进 box（运行完成时与恢复上次结果共用）。"""
+    status = box.status(label, state=state, expanded=False)
+    status.markdown("```text\n" + "\n".join(trace_lines) + "\n```",
+                    help="Research trace — decision log of the agent")
+    if sources:
+        box.divider()
+        box.markdown(linkify_citations(answer, sources))
+        box.subheader("Sources")
+        for i, s in enumerate(sources, 1):
+            box.markdown(f"{i}. [{s['title'] or s['url']}]({s['url']})")
+    else:
+        box.warning(answer)
+
+
+# 结果占位符：每次运行同路径重建 —— 新研究开始的瞬间即替换掉旧结果
+ph = st.empty()
 
 if run and question.strip():
-    trace_box = st.empty()
+    q = question.strip()
+    result_box = ph.container()
+
+    status = result_box.status(f"🗺 Researching: {q[:80]}", expanded=True)
+    trace_ph = status.empty()
     answer, sources, lines = None, [], []
 
-    # 消费事件流：轨迹区实时刷新
-    for ev in research_events(question.strip()):
-        t = ev["type"]
-        if t == "plan":
-            lines.append(f"🗺 规划查询: {', '.join(ev['queries'])}")
-        elif t == "round":
-            for e in ev.get("errors", []):
-                lines.append(f"⚠️ {e}")
-            if ev["round"] > 0:
-                lines.append(f"🔍 第 {ev['round']} 轮：{ev['queries']} 个查询，"
-                             f"新增 {ev['added']} 条，累计 {ev['total']} 条")
-        elif t == "judge":
-            if ev["sufficient"]:
-                lines.append(f"✅ 证据充分，停止搜索：{ev['reason']}")
-            else:
-                lines.append(f"➕ 证据不足，补搜：{ev['reason']}")
-        elif t == "rank":
-            lines.append(f"⚖️ 降权：聚合站 {ev['aggregator']} 条 / 社交平台 {ev['social']} 条（后置不删除）")
-        elif t == "cap":
-            lines.append(f"✂️ 证据池 {ev['before']} → {ev['after']} 条")
-        elif t == "answer":
-            answer, sources = ev["text"], ev["sources"]
-        trace_box.markdown(
-            "```text\n" + "\n".join(lines) + "\n```",
-            help="Research trace — live decision log of the agent"
-        )
+    def _flush(next_hint: str) -> None:
+        trace_ph.markdown("```text\n" + "\n".join(lines + [next_hint]) + "\n```")
 
-    st.divider()
+    try:
+        for ev in research_events(q):
+            t = ev["type"]
+            if t == "plan":
+                lines.append(f"🗺 规划查询: {', '.join(ev['queries'])}")
+                _flush("🔍 搜索中…")
+                status.update(label="🔍 Searching…")
+            elif t == "round":
+                for e in ev.get("errors", []):
+                    lines.append(f"⚠️ {e}")
+                if ev["round"] > 0:
+                    lines.append(f"🔍 第 {ev['round']} 轮：{ev['queries']} 个查询，"
+                                 f"新增 {ev['added']} 条，累计 {ev['total']} 条")
+                _flush("🧠 评估证据是否充分…")
+            elif t == "judge":
+                if ev["sufficient"]:
+                    lines.append(f"✅ 证据充分，停止搜索：{ev['reason']}")
+                else:
+                    lines.append(f"➕ 证据不足，补搜：{ev['reason']}")
+                _flush("🧠 评估证据是否充分…")
+            elif t == "rank":
+                lines.append(f"⚖️ 降权：聚合站 {ev['aggregator']} 条 / "
+                             f"社交平台 {ev['social']} 条（后置不删除）")
+                _flush("📝 综合答案中…")
+                status.update(label="📝 Synthesizing answer…")
+            elif t == "cap":
+                lines.append(f"✂️ 证据池 {ev['before']} → {ev['after']} 条")
+                _flush("📝 综合答案中…")
+            elif t == "answer":
+                answer, sources = ev["text"], ev["sources"]
+    except Exception as e:  # 失败绝不静默：界面明确呈现错误
+        status.update(label="❌ Research failed", state="error", expanded=True)
+        trace_ph.markdown("```text\n" + "\n".join(lines) + "\n```")
+        result_box.error(f"研究过程出错：{e}")
+        st.stop()
+
+    # 完成态：收起轨迹、结果落在同一容器内（不整块重绘，避免闪烁）；
+    # 存 session_state，后续交互触发的重渲染用 _render_result 恢复同样的内容
+    label = (f"✅ Done · {len(sources)} sources"
+             if sources else "⚠️ Insufficient evidence")
+    status.update(label=label, state="complete" if sources else "error", expanded=False)
+    trace_ph.markdown("```text\n" + "\n".join(lines) + "\n```",
+                      help="Research trace — decision log of the agent")
     if sources:
-        st.markdown(linkify_citations(answer, sources))
-        st.subheader("Sources")
+        result_box.divider()
+        result_box.markdown(linkify_citations(answer, sources))
+        result_box.subheader("Sources")
         for i, s in enumerate(sources, 1):
-            st.markdown(f"{i}. [{s['title'] or s['url']}]({s['url']})")
+            result_box.markdown(f"{i}. [{s['title'] or s['url']}]({s['url']})")
     else:
-        st.warning(answer)  # 证据不足路径：原样呈现
+        result_box.warning(answer)  # 证据不足路径：原样呈现，不美化
+    st.session_state["last_result"] = {
+        "trace": lines, "answer": answer, "sources": sources, "label": label,
+        "state": "complete" if sources else "error",
+    }
+else:
+    # 非运行的交互（输入、点击）不丢结果：恢复上次完成态
+    last = st.session_state.get("last_result")
+    if last:
+        _render_result(ph.container(), last["trace"], last["answer"],
+                       last["sources"], last["label"], last["state"])
