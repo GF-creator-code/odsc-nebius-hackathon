@@ -87,6 +87,23 @@ def test_trace_save():
         assert "测试问题" in content and "[第1轮] 新增 3 条" in content and "测试回答" in content
     print("[ok] 轨迹落盘与目录自动创建")
 
+def test_research_output_format():
+    # 命令行版输出必须由结构化版拼接而来，来源格式不回退
+    from agent import research
+    # 不跑真实 API：只验证文本拼接路径的格式约定
+    d = {"answer": "结论 [1]。", "insufficient": False,
+         "sources": [{"n": 1, "title": "T", "url": "https://a.com/x"}],
+         "trace_lines": []}
+    import agent
+    orig = agent.research_structured
+    agent.research_structured = lambda q, tp=None: d   # 打桩，不联网
+    try:
+        out = research("q")
+    finally:
+        agent.research_structured = orig
+    assert out.endswith("来源：\n[1] T\n    https://a.com/x")
+    print("[ok] research文本输出格式")
+
 
 if __name__ == "__&#8203;main__":
     test_json_out_variants()
@@ -96,4 +113,5 @@ if __name__ == "__&#8203;main__":
     test_low_trust_ranking()   # 新增
     test_trace_save()
     print("\n[✓] 全部纯逻辑测试通过")
+
 
