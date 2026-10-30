@@ -76,6 +76,29 @@ def test_norm_url_dedup():
     print("[ok] URL 规范化去重")
 
 
+def test_norm_url_amp():
+    # AMP 移动版变体必须与桌面版视为同一篇（实测中 [8][10] 漏网）
+    assert norm_url("https://www.cnbc.com/amp/2024/06/27/x.html") == \
+        norm_url("https://www.cnbc.com/2024/06/27/x.html")
+    assert norm_url("https://a.com/x/amp/") == norm_url("https://a.com/x")  # 后缀形式
+    # 真实路径段不误删：amp- 开头是有效路径，不是移动版变体
+    assert norm_url("https://a.com/amp-x") != norm_url("https://a.com/x")
+    print("[ok] AMP 移动版变体去重")
+
+
+def test_selfmedia_demotion():
+    # 券商/股评自媒体与聚合站同档降权（实测输出未交叉验证的份额与股价数字）
+    for u in ("https://www.tradingkey.com/news/1",
+              "https://brief.sharpertrades.com/x",
+              "https://caifuhao.eastmoney.com/p/1"):
+        assert source_tier(u) == 1, f"应降权: {u}"
+    assert source_tier("https://www.nobelprize.org/x") == 0  # 一手来源不降权
+    # 计入 aggregator 统计：demoted_counts 结构不变，app.py 无需改动
+    rs = [{"url": "https://www.tradingkey.com/a"}, {"url": "https://www.gov.cn/x"}]
+    assert demoted_counts(rs) == {"aggregator": 1, "social": 0}
+    print("[ok] 券商/股评自媒体降权")
+
+
 def test_quality_ranking():
     assert domain_of("https://www.nobelprize.org/prizes/physics") == "nobelprize.org"
     assert domain_of("https://x.com/someone/status/1") == "x.com"
@@ -99,5 +122,7 @@ if __name__ == "__main__":
     test_trace_save()
     test_linkify_citations()
     test_norm_url_dedup()
+    test_norm_url_amp()      # 新增
+    test_selfmedia_demotion()  # 新增
     test_quality_ranking()
     print("\n[✓] 全部纯逻辑测试通过")
