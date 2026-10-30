@@ -17,24 +17,32 @@ ODSC × Nebius Hackathon 2026 参赛项目（队伍 KK_yuanqu，2 人）。
 
 ## 架构与数据流
 
+**核心 = `agent.research_events()` 事件流生成器；CLI 与 Streamlit UI 都是消费事件的薄适配层。**
+后续换界面、适配其他专业领域、换前端框架，都不要动核心循环——只加适配层或调提示词。
+
 ```
 用户问题
   → plan_queries()   LLM 生成 2-3 个互补搜索词（中英文）
-  → search_round()   Tavily 搜索，按 URL 去重入池（上限 MAX_SOURCES=12）
+  → search_round()   Tavily 搜索，按 URL 去重入池
   → judge_evidence() LLM 评估证据是否充分；不足则给 follow_up 补搜（最多 MAX_ROUNDS=3 轮）
+  → rank_sources()   来源质量排序：社交/聚合站降权（只降权不删除，quality.py）
+  → 截断 MAX_SOURCES=12
   → synthesize()     证据拼进 user 消息（与 system 指令隔离），LLM 输出带 [n] 引用的回答
-  → 输出             回答 + 编号来源列表；--trace 时轨迹落盘 traces/
+  → 输出             回答 + 编号来源列表；CLI --trace / UI 轨迹区 展示全过程
 ```
 
 ## 文件地图
 
 | 文件 | 职责 | 修改边界 |
 |---|---|---|
-| `agent.py` | 主流程与全部提示词 | 提示词调优、轮数参数、引用格式均可改；不要破坏"评估→补搜/停止"循环结构 |
-| `websearch.py` | Tavily 客户端 | 可加 advanced 模式、域名过滤；**不得移除重试/显式报错逻辑** |
+| `agent.py` | 核心事件流 `research_events()` + 全部提示词 + CLI 适配 | 提示词调优、轮数参数、引用格式可改；**不得破坏"评估→补搜/停止"循环与事件流结构** |
+| `quality.py` | 来源质量排序（纯函数：域名分层、稳定排序） | 加减 SOCIAL/AGGREGATOR 域名集合即可；不得改成"直接删除"（证据完整性优先） |
+| `app.py` | Streamlit UI（薄适配层） | 只消费事件流，不复制核心逻辑；保持通用，不绑定专业领域 |
+| `websearch.py` | Tavily 客户端 | 可加 advanced 模式；**不得移除重试/显式报错逻辑** |
 | `llm.py` | 推理层（OpenAI 兼容，可插拔） | 基本不动；换供应商只改 `.env`（LLM_BASE_URL/LLM_API_KEY/LLM_MODEL） |
 | `tests/test_pure.py` | 纯逻辑测试（不耗 API 额度） | 新增逻辑必须补用例 |
 | `traces/` | 研究轨迹样例（demo/README 素材） | 只增不删 |
+| `DEMO.md` | demo 录制脚本 | 界面/流程变更时同步 |
 | `.env.example` | 密钥模板 | 改字段名时同步更新 |
 
 ## 本地环境与命令
@@ -64,10 +72,12 @@ python agent.py "任意问题" --trace    # 另存研究轨迹到 traces/
 
 ## 当前待办（按优先级）
 
-1. **接入 Nebius Token Factory**（队长负责，暂缓）：tokenfactory.nebius.com 开 key，改 `.env` 三行即完成切换，然后跑端到端验证
-2. **来源质量过滤**：搜索结果按域名/类型降权或过滤低质来源（社交媒体、聚合站），提升 30% 那项的证据质量
-3. **Streamlit 演示界面**：输入框 → 展示回答 + 可点击来源 + 研究轨迹；具体要求见下文"界面要求"；README 里的"How it works"流程图与速览可作界面信息架构参考
+1. **接入 Nebius Token Factory**（队长负责，暂缓）：tokenfactory.nebius.com 开 key，改 `.env` 三行即完成切换，然后跑端到端验证（最晚 2026-11-15，提交硬门槛）
+2. ~~来源质量过滤~~（队长已完成：`quality.py` 结构性降权——社交/聚合站后置不删除，纯函数带测试）
+3. ~~Streamlit 演示界面~~（队长已完成：`app.py` 事件流适配，可点击引用+实时轨迹+证据不足原样呈现；`streamlit run app.py`）
 4. ~~README 完善~~（队长已完成：英文版含架构图/真实示例/设计决策对照表；后续若改动核心流程，记得同步 README 的流程图与 Example）
+5. **Demo 录制**（界面已就绪，按 DEMO.md 脚本执行即可）
+6. （可选）提示词与查询规划调优：拿 3-5 个不同类型问题对比效果，记录到 notes/
 
 ### 界面要求（做第 3 项时）
 

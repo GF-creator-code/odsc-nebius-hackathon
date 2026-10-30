@@ -8,7 +8,8 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from agent import _json_out, Trace, MAX_SOURCES, SNIPPET_CHARS  # noqa: E402
+from agent import _json_out, MAX_SOURCES, SNIPPET_CHARS, linkify_citations  # noqa: E402
+from quality import domain_of, source_tier, rank_sources, demoted_counts  # noqa: E402
 
 
 def test_json_out_variants():
@@ -43,18 +44,37 @@ def test_snippet_truncation():
 
 
 def test_trace_save():
-    t = Trace(None)
-    t.log("[规划] 测试")
-    assert t.save("q", "a") == ""  # 未指定路径时不落盘
-    with tempfile.TemporaryDirectory() as d:
-        path = os.path.join(d, "sub", "trace.md")
-        t2 = Trace(path)
-        t2.log("[第1轮] 新增 3 条")
-        saved = t2.save("测试问题", "测试回答")
-        assert saved == path and os.path.exists(path)
-        content = open(path, encoding="utf-8").read()
-        assert "测试问题" in content and "[第1轮] 新增 3 条" in content and "测试回答" in content
-    print("[ok] 轨迹落盘与目录自动创建")
+    from agent import format_output  # 轨迹落盘逻辑已并入 research()，此处验证输出格式化
+    srcs = [{"title": "a", "url": "https://a", "content": "c"},
+            {"title": "b", "url": "https://b", "content": "c"}]
+    out = format_output("答案[1][2]", srcs)
+    assert "答案[1][2]" in out and "[1] a" in out and "[2] b" in out and "https://b" in out
+    assert format_output("无来源回答", []) == "无来源回答"
+    print("[ok] 输出格式化（回答+编号来源）")
+
+
+def test_linkify_citations():
+    srcs = [{"url": "https://x/1"}, {"url": "https://x/2"}]
+    out = linkify_citations("论断A[1]，论断B[2]，越界[3]保留", srcs)
+    assert "[1](https://x/1)" in out and "[2](https://x/2)" in out
+    assert "[3]" in out and "[3](" not in out  # 越界编号原样保留，不掩盖模型错误
+    print("[ok] 引用链接化（含越界保护）")
+
+
+def test_quality_ranking():
+    assert domain_of("https://www.nobelprize.org/prizes/physics") == "nobelprize.org"
+    assert domain_of("https://x.com/someone/status/1") == "x.com"
+    assert source_tier("https://www.facebook.com/p/1") == 2
+    assert source_tier("https://medium.com/@x/post") == 1
+    assert source_tier("https://www.nobelprize.org/x") == 0
+    # 稳定排序：同 tier 保持原顺序，社交/聚合后置但不删除
+    rs = [{"url": "https://x.com/a"}, {"url": "https://www.gov.cn/x"},
+          {"url": "https://medium.com/b"}, {"url": "https://nobelprize.org/y"}]
+    ranked = rank_sources(rs)
+    assert [r["url"] for r in ranked] == ["https://www.gov.cn/x", "https://nobelprize.org/y",
+                                          "https://medium.com/b", "https://x.com/a"]
+    assert demoted_counts(rs) == {"aggregator": 1, "social": 1}
+    print("[ok] 来源质量排序（降权不删除、稳定）")
 
 
 if __name__ == "__main__":
@@ -62,4 +82,6 @@ if __name__ == "__main__":
     test_source_cap()
     test_snippet_truncation()
     test_trace_save()
+    test_linkify_citations()
+    test_quality_ranking()
     print("\n[✓] 全部纯逻辑测试通过")

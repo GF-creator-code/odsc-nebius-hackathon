@@ -1,29 +1,34 @@
-"""研究型 Agent：问题 → 多轮 Tavily 取证 → LLM 综合 → 带引用的回答
+"""研究型 Agent 核心：问题 → 多轮 Tavily 取证 → LLM 综合 → 带引用的回答
 
-用法：
+架构：research_events() 是唯一核心，逐步产出研究事件（生成器）；
+CLI（本文件 __main__）与 UI（app.py）都是消费事件的薄适配层——
+后续换界面、换领域、换前后端都不需要动核心循环。
+
+CLI 用法：
     python agent.py "你的问题"                 # 结果打到 stdout，轨迹打到 stderr
     python agent.py "你的问题" --trace         # 另存研究轨迹到 traces/（demo/README 素材）
 
-研究轨迹：规划查询 → 搜索 → 证据评估（够/不够）→ [补搜] → 综合作答
+研究轨迹事件：plan → round → judge → [rank] → cap → answer
 
 设计对应评分点：
 - 引用 [n] 存活到最终回答，末尾列编号来源（Sourced and verifiable answers, 30%）
 - 证据不足时明确声明，不编造；检索失败不掩盖（30%/25%）
-- 证据评估决定"继续搜还是停"（Agent design, 15%）
+- 证据评估决定"继续搜还是停"；来源按结构属性降权排序（Agent design, 15%）
 - 来源内容作为"数据"传入、与可信指令隔离，防提示注入（Agent design, 15%）
 
 加固点：
 - Windows GBK 控制台自动切 UTF-8，中文输出不炸
 - 证据池上限 + 单源正文截断，防提示词膨胀失控
-- 轨迹落盘（--trace），README"研究轨迹"与 demo 直接可用
 """
 
+import datetime
 import json
 import os
+import re
 import sys
-import datetime
 
 import llm
+from quality import rank_sources, demoted_counts
 from websearch import get_client, TavilyError
 
 MAX_ROUNDS = 3          # 最多搜索轮数（首轮 + 至多2轮补搜）
@@ -51,6 +56,11 @@ SYNTH_SYS = (
     "4. 答案先给结论（2-3 句），再给必要的展开，末尾不要重复来源列表"
 )
 
+INSUFFICIENT_MSG = ("【证据不足】所有搜索查询均失败或返回空结果，"
+                    "现有证据不足以回答该问题。请稍后重试或换个问法。")
+
+
+# ---------------------------------------------------------------- 工具函数
 
 def _win_utf8() -> None:
     """Windows 控制台默认 GBK，打中文会 UnicodeEncodeError——统一切到 UTF-8。"""
@@ -73,42 +83,30 @@ def _json_out(text: str) -> dict:
     return json.loads(s[start:end + 1])
 
 
-class Trace:
-    """轨迹记录：同步打 stderr，可选落盘。"""
+def linkify_citations(answer: str, sources: list) -> str:
+    """把回答中的 [n] 替换为指向对应来源 URL 的 markdown 链接（UI 渲染用）。
 
-    def __init__(self, path: str = None):
-        self.path = path
-        self.lines = []
-
-    def log(self, msg: str) -> None:
-        print(msg, file=sys.stderr)
-        self.lines.append(msg)
-
-    def save(self, question: str, answer: str) -> str:
-        if not self.path:
-            return ""
-        os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        with open(self.path, "w", encoding="utf-8") as f:
-            f.write(f"# 研究轨迹 · {datetime.datetime.now():%Y-%m-%d %H:%M:%S}\n\n"
-                    f"## 问题\n{question}\n\n## 过程\n")
-            f.write("\n".join(self.lines))
-            f.write(f"\n\n## 最终回答\n{answer}\n")
-        return self.path
+    纯函数：只替换编号在来源范围内的引用，越界编号原样保留（不掩盖模型错误）。
+    """
+    def sub(m):
+        i = int(m.group(1))
+        return f"[{i}]({sources[i - 1]['url']})" if 1 <= i <= len(sources) else m.group(0)
+    return re.sub(r"\[(\d+)\]", sub, answer)
 
 
-def plan_queries(question: str, trace: Trace) -> list:
+# ---------------------------------------------------------------- 核心循环（事件流）
+
+def plan_queries(question: str):
     try:
         out = llm.chat([{"role": "system", "content": PLAN_SYS},
                         {"role": "user", "content": question}])
         queries = [str(q) for q in _json_out(out)["queries"] if q][:3]
-        trace.log(f"[规划] {queries}")
-        return queries
+        return queries, None
     except Exception as e:
-        trace.log(f"[!] 规划失败，退化为原问题：{e}")
-        return [question]
+        return [question], f"[!] 规划失败，退化为原问题：{e}"
 
 
-def judge_evidence(question: str, results: list, trace: Trace) -> dict:
+def judge_evidence(question: str, results: list) -> dict:
     """评估证据是否充分；异常时保守视为充分（避免死循环烧额度）。"""
     try:
         evidence = "\n".join(f"[{i}] {r['title']}: {r['content'][:150]}"
@@ -120,49 +118,74 @@ def judge_evidence(question: str, results: list, trace: Trace) -> dict:
                 "reason": str(d.get("reason", "")),
                 "follow_up": [str(q) for q in d.get("follow_up", []) if q][:2]}
     except Exception as e:
-        trace.log(f"[!] 评估失败，视为充分以停止循环：{e}")
-        return {"sufficient": True, "reason": "评估异常，保守停止", "follow_up": []}
+        return {"sufficient": True, "reason": f"评估异常，保守停止：{e}", "follow_up": []}
 
 
-def search_round(queries: list, seen: set, results: list, trace: Trace) -> int:
-    """执行一轮搜索并入池（按 URL 去重），返回本轮新增条数。"""
+def search_round(queries: list, seen: set, results: list):
+    """执行一轮搜索并入池（按 URL 去重），返回 (新增条数, 失败信息列表)。"""
     searcher = get_client()
-    added = 0
+    added, errors = 0, []
     for q in queries:
         try:
             data = searcher.search(q, max_results=PER_QUERY_RESULTS)
         except TavilyError as e:
-            trace.log(f"[!] 查询失败（{q}）：{e}")
+            errors.append(f"[!] 查询失败（{q}）：{e}")
             continue
         for r in data["results"]:
             if r["url"] and r["url"] not in seen:
                 seen.add(r["url"])
                 results.append(r)
                 added += 1
-    return added
+    return added, errors
 
 
-def gather(question: str, trace: Trace) -> list:
-    """多轮取证循环：规划 → 搜索 → 评估 → 补搜/停止。返回截断到上限的证据池。"""
+def research_events(question: str):
+    """核心研究循环：生成器逐步产出事件，最终产出 answer 事件。
+
+    事件类型（dict，均有 "type" 键）：
+      plan   {queries}
+      round  {round, queries, added, total, errors}
+      judge  {sufficient, reason, follow_up?}
+      rank   {aggregator, social}          结构性降权统计
+      cap    {before, after}               证据池截断
+      answer {text, sources}               sources 为空即"证据不足"路径
+    """
     seen, results = set(), []
-    queries = plan_queries(question, trace)
+    queries, plan_err = plan_queries(question)
+    if plan_err:
+        yield {"type": "round", "round": 0, "queries": 1, "added": 0, "total": 0, "errors": [plan_err]}
+    yield {"type": "plan", "queries": queries}
 
     for rnd in range(1, MAX_ROUNDS + 1):
-        added = search_round(queries, seen, results, trace)
-        trace.log(f"[第{rnd}轮] 查询{len(queries)}个，新增 {added} 条，累计 {len(results)} 条")
+        added, errors = search_round(queries, seen, results)
+        yield {"type": "round", "round": rnd, "queries": len(queries),
+               "added": added, "total": len(results), "errors": errors}
         if not results:
             break
-        verdict = judge_evidence(question, results, trace)
+        verdict = judge_evidence(question, results)
         if verdict["sufficient"]:
-            trace.log(f"[评估] 证据充分：{verdict['reason']}")
+            yield {"type": "judge", "sufficient": True, "reason": verdict["reason"]}
             break
-        trace.log(f"[评估] 证据不足：{verdict['reason']} → 补搜 {verdict['follow_up']}")
+        yield {"type": "judge", "sufficient": False,
+               "reason": verdict["reason"], "follow_up": verdict["follow_up"]}
         queries = verdict["follow_up"] or queries
 
+    # 结构性质量排序：一手来源在前，社媒/聚合站降权（只降权不删除）
+    counts = demoted_counts(results)
+    if counts["aggregator"] or counts["social"]:
+        yield {"type": "rank", **counts}
+    results = rank_sources(results)
+
     if len(results) > MAX_SOURCES:
-        trace.log(f"[截断] 证据池 {len(results)} 条 → 取前 {MAX_SOURCES} 条进综合")
+        yield {"type": "cap", "before": len(results), "after": MAX_SOURCES}
         results = results[:MAX_SOURCES]
-    return results
+
+    if not results:
+        yield {"type": "answer", "text": INSUFFICIENT_MSG, "sources": []}
+        return
+
+    answer = synthesize(question, results)
+    yield {"type": "answer", "text": answer, "sources": results}
 
 
 def synthesize(question: str, results: list) -> str:
@@ -180,20 +203,57 @@ def synthesize(question: str, results: list) -> str:
                      {"role": "user", "content": user_msg}])
 
 
+# ---------------------------------------------------------------- CLI 适配层
+
+def _event_line(ev: dict) -> str:
+    """事件 → 轨迹文本行（CLI stderr 与 traces/ 落盘共用）。"""
+    t = ev["type"]
+    if t == "plan":
+        return f"[规划] {ev['queries']}"
+    if t == "round":
+        base = (f"[第{ev['round']}轮] 查询{ev['queries']}个，"
+                f"新增 {ev['added']} 条，累计 {ev['total']} 条")
+        if ev["round"] == 0:
+            base = ""
+        return "\n".join(filter(None, [base] + ev.get("errors", [])))
+    if t == "judge":
+        if ev["sufficient"]:
+            return f"[评估] 证据充分：{ev['reason']}"
+        return f"[评估] 证据不足：{ev['reason']} → 补搜 {ev.get('follow_up', [])}"
+    if t == "rank":
+        return (f"[排序] 降权：内容聚合站 {ev['aggregator']} 条、"
+                f"社交平台 {ev['social']} 条（不删除，仅后置）")
+    if t == "cap":
+        return f"[截断] 证据池 {ev['before']} 条 → 取前 {ev['after']} 条进综合"
+    return ""
+
+
 def research(question: str, trace_path: str = None) -> str:
-    trace = Trace(trace_path)
-    results = gather(question, trace)
-    if not results:
-        answer = ("【证据不足】所有搜索查询均失败或返回空结果，"
-                  "现有证据不足以回答该问题。请稍后重试或换个问法。")
-        trace.save(question, answer)
+    """CLI 入口：消费事件流，轨迹打 stderr（可选落盘），结果返回 stdout。"""
+    lines, answer, sources = [], None, []
+    for ev in research_events(question):
+        line = _event_line(ev)
+        if line:
+            print(line, file=sys.stderr)
+            lines.append(line)
+        if ev["type"] == "answer":
+            answer, sources = ev["text"], ev["sources"]
+
+    if trace_path and answer is not None:
+        os.makedirs(os.path.dirname(trace_path), exist_ok=True)
+        output = format_output(answer, sources)
+        with open(trace_path, "w", encoding="utf-8") as f:
+            f.write(f"# 研究轨迹 · {datetime.datetime.now():%Y-%m-%d %H:%M:%S}\n\n"
+                    f"## 问题\n{question}\n\n## 过程\n" + "\n".join(lines) +
+                    f"\n\n## 最终回答\n{output}\n")
+    return format_output(answer or INSUFFICIENT_MSG, sources)
+
+
+def format_output(answer: str, sources: list) -> str:
+    if not sources:
         return answer
-    answer = synthesize(question, results)
-    sources = "\n".join(f"[{i}] {r['title']}\n    {r['url']}"
-                        for i, r in enumerate(results, 1))
-    output = f"{answer}\n\n来源：\n{sources}"
-    trace.save(question, output)
-    return output
+    src = "\n".join(f"[{i}] {r['title']}\n    {r['url']}" for i, r in enumerate(sources, 1))
+    return f"{answer}\n\n来源：\n{src}"
 
 
 if __name__ == "__main__":

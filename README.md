@@ -43,7 +43,21 @@ cp .env.example .env        # Windows: copy .env.example .env
 #   TAVILY_API_KEY=tvly-...          (from app.tavily.com)
 #   LLM_BASE_URL / LLM_API_KEY / LLM_MODEL   (any OpenAI-compatible endpoint)
 python test_tavily.py       # verifies the search path end-to-end
+```
+
+**Web UI** (recommended):
+
+```bash
+streamlit run app.py        # or: python -m streamlit run app.py
+```
+
+Type a question, watch the live research trace (planning → search rounds → sufficiency judgment → source ranking), get an answer with **clickable inline citations**, and an honest warning when evidence is insufficient.
+
+**CLI** (same core, thin adapter):
+
+```bash
 python agent.py "What won the 2026 Nobel Prize in Physics, and for what work?"
+python agent.py "..." --trace      # also saves the research trace to traces/
 ```
 
 The inference layer is deliberately pluggable (`llm.py`): switching providers — e.g. to Nebius Token Factory — is a three-line `.env` change, no code edits. API keys live only in `.env`, which is git-ignored.
@@ -59,12 +73,16 @@ Notice the shape of the answer: conclusion first, claims cited, and an explicit 
 
 ## Repository layout
 
+The core loop is a single event-stream generator (`agent.research_events`); CLI and Web UI are thin adapters over the same events — swap either without touching the core.
+
 | File | Role |
 |---|---|
-| `agent.py` | Research loop: plan → search → judge → synthesize, prompts, trace logging |
+| `agent.py` | Core research loop (plan → search → judge → rank → synthesize) emitting events; CLI adapter; citation linkify |
+| `quality.py` | Source-quality ranking: demotes social/aggregator domains (never deletes) |
 | `websearch.py` | Tavily client with retries, explicit failure modes (auth / quota / network) |
 | `llm.py` | Pluggable OpenAI-compatible inference client |
-| `tests/test_pure.py` | Offline unit tests (JSON tolerance, pool caps, trace saving) — no API spend |
+| `app.py` | Streamlit UI: live trace, clickable citations, honest insufficient-evidence state |
+| `tests/test_pure.py` | Offline unit tests (JSON tolerance, ranking, linkify, caps) — no API spend |
 | `traces/` | Saved research traces from real runs, used as demo material |
 
 ## Error handling policy
@@ -75,9 +93,9 @@ The agent never silently degrades: auth errors, quota exhaustion, malformed resp
 
 - [x] Core loop: multi-round search with sufficiency judging, citation discipline, trace files
 - [x] Robustness: retries with backoff, response validation, UTF-8 console, prompt-size caps
+- [x] Source-quality ranking (social/aggregator demotion, never silent deletion)
+- [x] Web UI (Streamlit): clickable citations, live research trace
 - [x] Offline test suite
-- [ ] Web UI (Streamlit): clickable citations, live research trace
-- [ ] Source-quality filtering (down-rank social/aggregator domains)
 - [ ] Final inference on Nebius Token Factory (`.env` switch, pending key)
 - [ ] Demo video
 
