@@ -1,7 +1,7 @@
 """研究型 Agent：问题 → 多轮 Tavily 取证 → LLM 综合 → 带引用的回答
 
 用法：
-    python agent.py "你的问题"                 # 结果打到 stdout，轨迹打到 stderr
+    python agent.py "你的问题"                 # 结果打到 stdout，轨迹打到stderr
     python agent.py "你的问题" --trace         # 另存研究轨迹到 traces/（demo/README 素材）
 
 研究轨迹：规划查询 → 搜索 → 证据评估（够/不够）→ [补搜] → 综合作答
@@ -13,9 +13,9 @@
 - 来源内容作为"数据"传入、与可信指令隔离，防提示注入（Agent design, 15%）
 
 加固点：
-- Windows GBK 控制台自动切 UTF-8，中文输出不炸
+- WindowsGBK控制台自动切UTF-8，中文输出不炸
 - 证据池上限 + 单源正文截断，防提示词膨胀失控
-- 轨迹落盘（--trace），README"研究轨迹"与 demo 直接可用
+- 轨迹落盘（--trace），README"研究轨迹"与demo直接可用
 """
 
 import json
@@ -34,21 +34,21 @@ MAX_SOURCES = 12        # 证据池上限：进提示词与来源列表的条数
 SNIPPET_CHARS = 1200    # 单源正文截断长度（Tavily 的 content 本身已较短，双保险）
 
 PLAN_SYS = (
-    "你是研究规划器。根据用户问题生成 2-3 个互补的搜索查询（必要时中英文各一），"
+    "你是研究规划器。根据用户问题生成2-3个互补的搜索查询（必要时中英文各一），"
     "覆盖问题的主要方面与时效性信息。只输出 JSON：{\"queries\": [\"...\", ...]}，不要多余文字。"
 )
 
 JUDGE_SYS = (
-    "你是证据评估员。判断现有证据能否回答给定问题。只输出 JSON：\n"
+    "你是证据评估员。判断现有证据能否回答给定问题。只输出JSON：\n"
     '{"sufficient": true/false, "reason": "一句话理由", '
     '"coverage": {"<子问题>": true/false, ...},\n'
     ' "follow_up": ["补充搜索查询", ...]}\n'
     "规则：\n"
-    "1. 先把问题拆成 2-4 个子问题（涉及多个对照对象的，每个对象单独成项），"
-    "写入 coverage 并逐项标注是否已有独立来源支撑\n"
-    "2. 仅当 coverage 全部为 true 时才判 sufficient=true\n"
-    "3. 有任一项为 false 则判 sufficient=false，follow_up 给 1-2 个针对性查询填补缺口\n"
-    "4. follow_up 不得重复已有查询已覆盖的方向"
+    "1. 先把问题拆成2-4个子问题（涉及多个对照对象的，每个对象单独成项），"
+    "写入coverage并逐项标注是否已有独立来源支撑\n"
+    "2. 仅当coverage全部为true时才判sufficient=true\n"
+    "3. 有任一项为false则判sufficient=false，follow_up给1-2个针对性查询填补缺口\n"
+    "4. follow_up不得重复已有查询已覆盖的方向"
 )
 
 
@@ -72,7 +72,7 @@ def _win_utf8() -> None:
 
 
 def _json_out(text: str) -> dict:
-    """容忍模型输出被```json包裹或带杂讯的 JSON 解析。"""
+    """容忍模型输出被```json包裹或带杂讯的JSON解析。"""
     s = text.strip()
     if "```" in s:
         s = s.split("```")[1].removeprefix("json").strip()
@@ -82,10 +82,10 @@ def _json_out(text: str) -> dict:
     return json.loads(s[start:end + 1])
 
 def _norm_url(url: str) -> str:
-    """规范化 URL 用于去重：抹平协议、www、末尾斜杠、查询串与锚点差异。
+    """规范化URL用于去重：抹平协议、www、末尾斜杠、查询串与锚点差异。
 
-    同一篇文章常有 http/https 两个版本被重复收录，若按原始 URL 去重会
-    白占两个来源名额（本次实测中 [7][8] 即为同文）。归一化后两者等价。
+    同一篇文章常有http/https两个版本被重复收录，若按原始URL去重会
+    白占两个来源名额（本次实测中[7][8]即为同文）。归一化后两者等价。
     """
     u = (url or "").strip().lower()
     for prefix in ("https://", "http://"):
@@ -98,7 +98,7 @@ def _norm_url(url: str) -> str:
 
 
 def _is_low_trust(url: str) -> bool:
-    """判断来源是否属于低可信域名（社交平台、UGC 聚合站），用于证据降权。"""
+    """判断来源是否属于低可信域名（社交平台、UGC聚合站），用于证据降权。"""
     host = urlparse(url).netloc.lower()
     if host.startswith("www."):
         host = host[4:]
@@ -106,7 +106,7 @@ def _is_low_trust(url: str) -> bool:
 
 
 class Trace:
-    """轨迹记录：同步打 stderr，可选落盘。"""
+    """轨迹记录：同步打stderr，可选落盘。"""
 
     def __init__(self, path: str = None):
         self.path = path
@@ -154,7 +154,7 @@ def judge_evidence(question: str, results: list, trace: Trace) -> dict:
                 "follow_up": [str(q) for q in d.get("follow_up", []) if q][:2]}
     except Exception as e:
         trace.log(f"[!] 评估失败，视为充分以停止循环：{e}")
-        return {"sufficient":   True, "reason": "评估异常，保守停止",
+        return {"sufficient": True, "reason": "评估异常，保守停止",
                 "coverage": {}, "follow_up": []}
 
 
@@ -197,7 +197,7 @@ def gather(question: str, trace: Trace) -> list:
 
     for rnd in range(1, MAX_ROUNDS + 1):
         added = search_round(queries, seen, results, trace)
-        trace.log(f"[第{rnd}轮] 查询{len(queries)}个，新增 {added} 条，累计 {len(results)} 条")
+        trace.log(f"[第{rnd}轮] 查询{len(queries)}个，新增{added}条，累计{len(results)}条")
         if not results:
             break
         verdict = judge_evidence(question, results, trace)
@@ -215,13 +215,13 @@ def gather(question: str, trace: Trace) -> list:
           # 降权排序：低可信来源沉到末尾，保证截断时优先淘汰它们而非优质来源
     low = sum(1 for r in results if r.get("_low_trust"))
     if low:
-        trace.log(f"[降权] {low} 条低可信来源已排至证据池末尾")
+        trace.log(f"[降权]{low}条低可信来源已排至证据池末尾")
         results.sort(key=lambda r: r.get("_low_trust", False))
 
     if len(results) > MAX_SOURCES:
-        dropped = [r["url"] for r in results[MAX_SOURCES:]]
-        trace.log(f"[截断] 证据池 {len(results)} 条 → 保留 {MAX_SOURCES} 条，淘汰 {len(dropped)} 条")
-        trace.log(f"[淘汰清单] {dropped}")
+        dropped = [r["url"]for r in results[MAX_SOURCES:]]
+        trace.log(f"[截断]证据池{len(results)}条→保留{MAX_SOURCES}条，淘汰{len(dropped)}条")
+        trace.log(f"[淘汰清单]{dropped}")
         results = results[:MAX_SOURCES]
     return results
 
@@ -243,20 +243,39 @@ def synthesize(question: str, results: list) -> str:
                      {"role": "user", "content": user_msg}])
 
 
-def research(question: str, trace_path: str = None) -> str:
+def research_structured(question: str, trace_path: str = None) -> dict:
+    """研究主流程的结构化出口：返回回答、来源列表与轨迹，供界面层渲染。
+
+    命令行的 research()与Streamlit的demo.py都从这里取数据，
+    避免两套渲染各自维护一份流程逻辑。
+    """
     trace = Trace(trace_path)
     results = gather(question, trace)
     if not results:
         answer = ("【证据不足】所有搜索查询均失败或返回空结果，"
                   "现有证据不足以回答该问题。请稍后重试或换个问法。")
         trace.save(question, answer)
-        return answer
+        return {"answer": answer, "sources": [],
+                "trace_lines": trace.lines, "trace_path": trace_path,
+                "insufficient": True}
     answer = synthesize(question, results)
-    sources = "\n".join(f"[{i}] {r['title']}\n    {r['url']}"
-                        for i, r in enumerate(results, 1))
-    output = f"{answer}\n\n来源：\n{sources}"
-    trace.save(question, output)
-    return output
+    sources = [{"n": i, "title": r["title"], "url": r["url"]}
+               for i, r in enumerate(results, 1)]
+    trace.save(question, answer)
+    return {"answer": answer, "sources": sources,
+            "trace_lines": trace.lines, "trace_path": trace_path,
+            "insufficient": False}
+
+
+def research(question: str, trace_path: str = None) -> str:
+    """命令行入口：复用结构化出口，拼成纯文本输出。"""
+    d = research_structured(question, trace_path)
+    if d["insufficient"]:
+        return d["answer"]
+    sources = "\n".join(f"[{s['n']}] {s['title']}\n    {s['url']}"
+                        for s in d["sources"])
+    return f"{d['answer']}\n\n来源：\n{sources}"
+
 
 
 if __name__ == "__main__":
