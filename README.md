@@ -71,6 +71,26 @@ The inference layer is deliberately pluggable (`llm.py`): switching providers �
 
 Notice the shape of the answer: conclusion first, claims cited, and an explicit limitation where the evidence is indirect — that paragraph is the product.
 
+### Verified runs — three real traces
+
+Every run below is a saved trace in [`traces/`](traces/), produced by an unmodified `agent.py` against live Tavily + LLM endpoints.
+
+| Trace | Question | Rounds (pool size) | Sources cited | Outcome |
+|---|---|---|---|---|
+| [`20261030_163023`](traces/20261030_163023.md) | China vs India 2026 GDP | 3 (8 → 11 → 14) | 12 | Converged — coverage checklist fully satisfied |
+| [`20261030_150405`](traces/20261030_150405.md) | Current policy rates of major central banks | 3 (5 → 9 → 11) | 11 | Answered **with an explicit conflict warning** |
+| [`20261030_204806`](traces/20261030_204806.md) | Huawei Ascend 910C deployments in European data centres | 3 (9 → 11 → 14) | 12 | **Insufficient evidence — stated, not invented** |
+
+**What each run demonstrates**
+
+1. **Targeted follow-up, not blind re-searching.** In the GDP run the judge decomposed the question into sub-questions, found *India's 2026 GDP level* unsupported after round 1, and issued a query aimed at exactly that gap; round 2 filled it. Rounds are driven by per-sub-question coverage, not a fixed schedule.
+2. **Source ranking is observable, never silent.** The GDP trace demoted 3 social-platform sources to the tail, then capped the pool 14 → 12 and recorded **which** entries were dropped (two Facebook posts). The Ascend run dropped two `cn.investing.com` pages the same way. Discards are named in the trace.
+3. **"I couldn't verify this" is a valid output.** The Ascend 910C question exhausted all 3 rounds without a single European deployment case. The agent said so, explained why each source failed to qualify ([1][2] are China-domestic, [5][6] don't mention the 910C), and listed what evidence would settle it.
+4. **Conflicts are surfaced, not averaged away.** The central-bank run found rates spanning Sept 2025 – Oct 2026 with contradictory figures for the same bank, and reported the spread instead of picking one number.
+
+> **Why some questions take longer.** A slower run is the agent gathering more rounds of evidence, not a performance problem: each extra round is one more search plus one sufficiency evaluation. English questions on well-documented facts often converge in 1 round (~40 s); sparse or region-specific topics typically run the full 3 (~2 min).
+
+
 ## Repository layout
 
 The core loop is a single event-stream generator (`agent.research_events`); CLI and Web UI are thin adapters over the same events — swap either without touching the core.
