@@ -74,7 +74,7 @@ The inference layer is deliberately pluggable (`llm.py`): switching providers �
 
 Notice the shape of the answer: conclusion first, claims cited, and an explicit limitation where the evidence is indirect — that paragraph is the product.
 
-### Verified runs — three real traces
+### Verified runs — Four real traces
 
 Every run below is a saved trace in [`traces/`](traces/), produced by an unmodified `agent.py` against live Tavily + LLM endpoints.
 
