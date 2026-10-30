@@ -83,6 +83,7 @@ Every run below is a saved trace in [`traces/`](traces/), produced by an unmodif
 | [`20261030_163023`](traces/20261030_163023.md) | China vs India 2026 GDP | 3 (8 → 11 → 14) | 12 | Converged — coverage checklist fully satisfied |
 | [`20261030_150405`](traces/20261030_150405.md) | Current policy rates of major central banks | 3 (5 → 9 → 11) | 11 | Answered **with an explicit conflict warning** |
 | [`20261030_204806`](traces/20261030_204806.md) | Huawei Ascend 910C deployments in European data centres | 3 (9 → 11 → 14) | 12 | **Insufficient evidence — stated, not invented** |
+| [`20261031_004646`](traces/20261031_004646.md) | 2026 Nobel Prize in Physics | 3 (6 → 8 → 12) | 9 of 12 | Converged; the 2 social-platform sources in the pool went uncited |
 
 **What each run demonstrates**
 
@@ -90,6 +91,7 @@ Every run below is a saved trace in [`traces/`](traces/), produced by an unmodif
 2. **Source ranking is observable, never silent.** The GDP trace demoted 3 social-platform sources to the tail, then capped the pool 14 → 12 and recorded **which** entries were dropped (two Facebook posts). The Ascend run dropped two `cn.investing.com` pages the same way. Discards are named in the trace.
 3. **"I couldn't verify this" is a valid output.** The Ascend 910C question exhausted all 3 rounds without a single European deployment case. The agent said so, explained why each source failed to qualify ([1][2] are China-domestic, [5][6] don't mention the 910C), and listed what evidence would settle it.
 4. **Conflicts are surfaced, not averaged away.** The central-bank run found rates spanning Sept 2025 – Oct 2026 with contradictory figures for the same bank, and reported the spread instead of picking one number.
+5. **Demotion is not deletion — but its downstream effect is visible.** In the Nobel run ([`20261031_004646`](traces/20261031_004646.md)) the pool held 12 sources after 3 rounds, yet the answer cites only 9: the two Facebook/Reddit entries ranked to the tail were never cited. Low-trust sources stay in the pool and are never silently dropped — they simply end up unused, because ranking alone is enough to steer the model away from them.
 
 > **Why some questions take longer.** A slower run is the agent gathering more rounds of evidence, not a performance problem: each extra round is one more search plus one sufficiency evaluation. English questions on well-documented facts often converge in 1 round (~40 s); sparse or region-specific topics typically run the full 3 (~2 min).
 
