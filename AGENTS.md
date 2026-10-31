@@ -6,7 +6,7 @@
 
 ODSC × Nebius Hackathon 2026 参赛项目（队伍 KK_yuanqu，2 人）。
 **题目**：构建研究型 Agent——把用户问题变成**有来源、可验证的回答**（sourced, verifiable answer）。
-**硬性要求**：推理最终必须跑在 Nebius Token Factory 上（当前暂用 DeepSeek 过渡，`.env` 三行可切换）；实时搜索用 Tavily；提交物 = 公开 repo + README + 短 demo。截止 2026-11-20。
+**硬性要求**：推理最终必须跑在 Nebius Token Factory 上（已完成，默认端点即 Nebius，`.env` 三行可切换）；实时搜索用 Tavily；提交物 = 公开 repo + README + 短 demo。截止 2026-11-20。
 
 评分权重（所有改动向这五条对齐）：
 1. 30% 回答有据可查：每个事实性论断带 `[n]` 引用，来源链接必须真实支撑该论断；证据不足要如实声明，**严禁编造事实或引用**
@@ -41,7 +41,7 @@ ODSC × Nebius Hackathon 2026 参赛项目（队伍 KK_yuanqu，2 人）。
 | `websearch.py` | Tavily 客户端 | 可加 advanced 模式；**不得移除重试/显式报错逻辑** |
 | `llm.py` | 推理层（OpenAI 兼容，可插拔） | 基本不动；换供应商只改 `.env`（LLM_BASE_URL/LLM_API_KEY/LLM_MODEL） |
 | `tests/test_pure.py` | 纯逻辑测试（不耗 API 额度） | 新增逻辑必须补用例 |
-| `traces/` | 研究轨迹样例（demo/README 素材） | 只增不删 |
+| `traces/` | 研究轨迹样例（demo/README 素材） | 每份须含推理端点/模型自证行 |
 | `DEMO.md` | demo 录制脚本 | 界面/流程变更时同步 |
 | `.env.example` | 密钥模板 | 改字段名时同步更新 |
 

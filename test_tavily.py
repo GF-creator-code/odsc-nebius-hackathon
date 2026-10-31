@@ -14,7 +14,7 @@ except TavilyError as e:
 
 load_env()
 key = os.environ.get("TAVILY_API_KEY", "")
-print(f"[*] key: {key[:8]}...{key[-4:] if len(key) > 12 else ''}")
+print(f"[*] key: {key[:5]}***（仅回显前缀，防止录屏泄露完整 key）")
 
 query = "ODSC AI West 2026 hackathon Nebius"
 print(f"[*] 查询: {query}\n")
