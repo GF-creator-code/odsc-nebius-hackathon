@@ -69,6 +69,11 @@ INSUFFICIENT_MSG = ("【证据不足】所有搜索查询均失败或返回空�
 
 # ---------------------------------------------------------------- 工具函数
 
+from typing import Optional
+
+from memory import SessionMemory, inherit_evidence
+
+
 def _win_utf8() -> None:
     """Windows 控制台默认 GBK，打中文会 UnicodeEncodeError——统一切到 UTF-8。"""
     for stream in (sys.stdout, sys.stderr):
@@ -123,11 +128,16 @@ def judge_evidence(question: str, results: list) -> dict:
         d = _json_out(out)
         coverage = {str(k): bool(v) for k, v in dict(d.get("coverage") or {}).items()}
         return {"sufficient": bool(d.get("sufficient")),
+                "eval_failed": False,
                 "reason": str(d.get("reason", "")),
                 "coverage": coverage,
                 "follow_up": [str(q) for q in d.get("follow_up", []) if q][:2]}
     except Exception as e:
-        return {"sufficient": True, "reason": f"评估异常，保守停止：{e}",
+        # 评估失败 ≠ 证据充分：仍按预算上限停止检索（避免持续调用），
+        # 但单独标记 eval_failed，界面与轨迹显示「评估失败」而非「证据充分」。
+        # 回归用例见 tests/test_judge_eval.py。
+        return {"sufficient": True, "eval_failed": True,
+                "reason": f"评估失败，按预算上限停止检索：{e}",
                 "coverage": {}, "follow_up": []}
 
 
@@ -151,7 +161,11 @@ def search_round(queries: list, seen: set, results: list):
     return added, errors
 
 
-def research_events(question: str):
+def research_events(question: str, memory: Optional[SessionMemory] = None, session_id: str = None):
+    if memory is not None and session_id:
+        memory = SessionMemory(session_id)
+    elif memory:
+        memory = memory
     """核心研究循环：生成器逐步产出事件，最终产出 answer 事件。
 
     事件类型（dict，均有 "type" 键）：
@@ -163,6 +177,10 @@ def research_events(question: str):
       answer {text, sources}               sources 为空即"证据不足"路径
     """
     seen, results = set(), []
+    if memory is not None:
+        inherited = inherit_evidence(memory, seen, results)
+        if inherited:
+            yield {"type": "memory", "inherited": inherited}
     queries, plan_err = plan_queries(question)
     if plan_err:
         yield {"type": "round", "round": 0, "queries": 1, "added": 0, "total": 0, "errors": [plan_err]}
@@ -203,6 +221,10 @@ def research_events(question: str):
 
     answer = synthesize(question, results)
     yield {"type": "answer", "text": answer, "sources": results}
+    if memory is not None:
+        last_judge = verdict
+        stats = memory.remember_turn(question, answer, results, (last_judge or {}).get("coverage"))
+        yield {"type": "memory", "remembered": stats}
 
 
 def synthesize(question: str, results: list) -> str:
@@ -234,6 +256,8 @@ def _event_line(ev: dict) -> str:
             base = ""
         return "\n".join(filter(None, [base] + ev.get("errors", [])))
     if t == "judge":
+        if ev.get("eval_failed"):
+            return f"[评估] 证据评估失败，按预算上限停止检索：{ev.get('reason', '')}"
         if ev["sufficient"]:
             cov = ev.get("coverage") or {}
             cov_line = f"（覆盖度：{cov}）" if cov else ""
