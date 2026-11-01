@@ -132,15 +132,15 @@ KK_yuanqu — [GF-creator-code](https://github.com/GF-creator-code) · [Hkate777
 
 ### 中文速览（团队内部）
 
-研究型 Agent：问题 → 规划查询 → Tavily 实时搜索（去重）→ 证据充分性评估（不足则定向补搜，最多 3 轮）→ 带行内 `[n]` 引用的综合回答 + 编号来源列表。证据不足时如实声明，绝不编造；网页内容作为不可信数据与系统指令隔离（防提示注入）。运行 `python agent.py "问题" --trace` 可保存完整研究轨迹。开发规范见 [AGENTS.md](AGENTS.md)。
+研究型Agent：问题 → 规划查询 → Tavily实时搜索（去重）→ 证据充分性评估（不足则定向补搜，最多3轮）→ 带行内 `[n]` 引用的综合回答 + 编号来源列表。证据不足时如实声明，绝不编造；网页内容作为不可信数据与系统指令隔离（防提示注入）。运行 `python agent.py "问题" --trace` 可保存完整研究轨迹。开发规范见 [AGENTS.md](AGENTS.md)。
 
 ## 离线评测（eval_traces.py）
 
-对 `traces/` 里的真实研究轨迹做规则类质量评测（零 LLM）：引用完整性（[n] 不悬空）、引用使用、来源多样性（去重域名 ≥2）、证据评估事件留痕；可选 `--llm` 接 OpenAI 兼容接口做忠实度评审。
+对 `traces/` 里的真实研究轨迹做规则类质量评测（零LLM）：引用完整性（[n] 不悬空）、引用使用、来源多样性（去重域名 ≥2）、证据评估事件留痕；可选 `--llm` 接OpenAI兼容接口做忠实度评审。
 
 ```bash
 python eval_traces.py --dir traces/          # 规则评测
-python eval_traces.py --dir traces/ --llm    # + LLM-as-Judge 忠实度评审
+python eval_traces.py --dir traces/ --llm    # + LLM-as-Judge忠实度评审
 ```
 
-当前指标（8 份真实轨迹）：**通过率 100%**，平均来源 10.6 条/轨迹，平均 1.8 轮检索，50% 轨迹触发定向补搜。测试：`python -m pytest tests/ -v`（17 项）。
+当前指标（4份真实轨迹）：**通过率100%**，平均来源11.8条/轨迹，平均2.5轮检索，100%轨迹触发定向补搜。测试：`python -m pytest tests/ -v`（27项）。
