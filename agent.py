@@ -1,12 +1,12 @@
-"""研究型 Agent 核心：问题 → 多轮 Tavily 取证 → LLM 综合 → 带引用的回答
+"""研究型Agent核心：问题 → 多轮Tavily取证 → LLM综合 → 带引用的回答
 
 架构：research_events() 是唯一核心，逐步产出研究事件（生成器）；
-CLI（本文件 __main__）与 UI（app.py）都是消费事件的薄适配层——
+CLI（本文件 __main__）与UI（app.py）都是消费事件的薄适配层——
 后续换界面、换领域、换前后端都不需要动核心循环。
 
-CLI 用法：
-    python agent.py "你的问题"                 # 结果打到 stdout，轨迹打到 stderr
-    python agent.py "你的问题" --trace         # 另存研究轨迹到 traces/（demo/README 素材）
+CLI用法：
+    python agent.py "你的问题"                 # 结果打到stdout，轨迹打到stderr
+    python agent.py "你的问题" --trace         # 另存研究轨迹到traces/（demo/README素材）
 
 研究轨迹事件：plan → round → judge → [rank] → cap → answer
 
@@ -17,7 +17,7 @@ CLI 用法：
 - 来源内容作为"数据"传入、与可信指令隔离，防提示注入（Agent design, 15%）
 
 加固点：
-- Windows GBK 控制台自动切 UTF-8，中文输出不炸
+- Windows GBK控制台自动切UTF-8，中文输出不炸
 - 证据池上限 + 单源正文截断，防提示词膨胀失控
 """
 
@@ -33,9 +33,9 @@ from websearch import get_client, TavilyError
 
 MAX_ROUNDS = 3          # 最多搜索轮数（首轮 + 至多2轮补搜）
 PER_QUERY_RESULTS = 3   # 每查询每轮取多少条。原为4：首轮即满9-12条，补搜没有发生空间；
-                        # 调小留额度给 follow-up，让"评估→补搜"循环真正可触发（Hkate777 PR#1）
+                        # 调小留额度给follow-up，让"评估→补搜"循环真正可触发（Hkate777 PR#1）
 MAX_SOURCES = 12        # 证据池上限：进提示词与来源列表的条数一致，引用不悬空
-SNIPPET_CHARS = 1200    # 单源正文截断长度（Tavily 的 content 本身已较短，双保险）
+SNIPPET_CHARS = 1200    # 单源正文截断长度（Tavily的content本身已较短，双保险）
 
 PLAN_SYS = (
     "你是研究规划器。根据用户问题生成 2-3 个互补的搜索查询（必要时中英文各一），"
@@ -75,7 +75,7 @@ from memory import SessionMemory, inherit_evidence
 
 
 def _win_utf8() -> None:
-    """Windows 控制台默认 GBK，打中文会 UnicodeEncodeError——统一切到 UTF-8。"""
+    """Windows控制台默认GBK，打中文会UnicodeEncodeError——统一切到UTF-8。"""
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             try:
@@ -85,7 +85,7 @@ def _win_utf8() -> None:
 
 
 def _json_out(text: str) -> dict:
-    """容忍模型输出被```json包裹或带杂讯的 JSON 解析。"""
+    """容忍模型输出被```json包裹或带杂讯的JSON解析。"""
     s = text.strip()
     if "```" in s:
         s = s.split("```")[1].removeprefix("json").strip()
@@ -96,7 +96,7 @@ def _json_out(text: str) -> dict:
 
 
 def linkify_citations(answer: str, sources: list) -> str:
-    """把回答中的 [n] 替换为指向对应来源 URL 的 markdown 链接（UI 渲染用）。
+    """把回答中的 [n] 替换为指向对应来源URL的markdown链接（UI渲染用）。
 
     纯函数：只替换编号在来源范围内的引用，越界编号原样保留（不掩盖模型错误）。
     """
@@ -134,15 +134,15 @@ def judge_evidence(question: str, results: list) -> dict:
                 "follow_up": [str(q) for q in d.get("follow_up", []) if q][:2]}
     except Exception as e:
         # 评估失败 ≠ 证据充分：仍按预算上限停止检索（避免持续调用），
-        # 但单独标记 eval_failed，界面与轨迹显示「评估失败」而非「证据充分」。
-        # 回归用例见 tests/test_judge_eval.py。
+        # 但单独标记eval_failed，界面与轨迹显示「评估失败」而非「证据充分」。
+        # 回归用例见tests/test_judge_eval.py。
         return {"sufficient": True, "eval_failed": True,
                 "reason": f"评估失败，按预算上限停止检索：{e}",
                 "coverage": {}, "follow_up": []}
 
 
 def search_round(queries: list, seen: set, results: list):
-    """执行一轮搜索并入池。去重口径用规范化 URL（同文 http/https 版本不重复占位，
+    """执行一轮搜索并入池。去重口径用规范化URL（同文http/https版本不重复占位，
     Hkate777 PR#1）。返回 (新增条数, 失败信息列表)。"""
     searcher = get_client()
     added, errors = 0, []
@@ -162,11 +162,7 @@ def search_round(queries: list, seen: set, results: list):
 
 
 def research_events(question: str, memory: Optional[SessionMemory] = None, session_id: str = None):
-    if memory is not None and session_id:
-        memory = SessionMemory(session_id)
-    elif memory:
-        memory = memory
-    """核心研究循环：生成器逐步产出事件，最终产出 answer 事件。
+    """核心研究循环：生成器逐步产出事件，最终产出answer事件。
 
     事件类型（dict，均有 "type" 键）：
       plan   {queries}
@@ -174,8 +170,12 @@ def research_events(question: str, memory: Optional[SessionMemory] = None, sessi
       judge  {sufficient, reason, follow_up?}
       rank   {aggregator, social}          结构性降权统计
       cap    {before, after}               证据池截断
-      answer {text, sources}               sources 为空即"证据不足"路径
+      answer {text, sources}               sources为空即"证据不足"路径
+      memory {inherited} / {remembered}    会话记忆（可选，仅传入memory/session_id时产生）
     """
+    # 仅在未传入现成memory且给了session_id时才新建会话记忆
+    if memory is None and session_id:
+        memory = SessionMemory(session_id)
     seen, results = set(), []
     if memory is not None:
         inherited = inherit_evidence(memory, seen, results)
@@ -242,10 +242,10 @@ def synthesize(question: str, results: list) -> str:
                      {"role": "user", "content": user_msg}])
 
 
-# ---------------------------------------------------------------- CLI 适配层
+# ---------------------------------------------------------------- CLI适配层
 
 def _event_line(ev: dict) -> str:
-    """事件 → 轨迹文本行（CLI stderr 与 traces/ 落盘共用）。"""
+    """事件 → 轨迹文本行（CLI stderr与traces/ 落盘共用）。"""
     t = ev["type"]
     if t == "plan":
         return f"[规划] {ev['queries']}"
@@ -276,7 +276,7 @@ def _event_line(ev: dict) -> str:
 
 
 def research(question: str, trace_path: str = None) -> str:
-    """CLI 入口：消费事件流，轨迹打 stderr（可选落盘），结果返回 stdout。"""
+    """CLI入口：消费事件流，轨迹打stderr（可选落盘），结果返回stdout。"""
     lines, answer, sources = [], None, []
     for ev in research_events(question):
         line = _event_line(ev)

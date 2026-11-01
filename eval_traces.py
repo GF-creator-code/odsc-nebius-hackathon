@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Sourced 离线评测器：解析 traces/ 研究轨迹，对回答质量做规则类 check + 可选 LLM-as-Judge。
+"""Sourced离线评测器：解析traces/ 研究轨迹，对回答质量做规则类check + 可选LLM-as-Judge。
 
-规则类 check（零 LLM，机械可复现）：
+规则类check（零LLM，机械可复现）：
   1. citation_integrity — 回答里的每个 [n] 引用都必须 ≤ 来源编号上限（引用不悬空）
   2. citations_used     — 最终回答至少使用过一次引用
   3. answer_present     — 最终回答非空
@@ -9,8 +9,8 @@
   5. source_diversity   — 来源去重域名 ≥ 2（单来源回声是风险信号）
   6. evaluation_recorded— 评估事件存在（证据充分/不足的判定被记录）
 
-LLM-as-Judge（--llm，需 OpenAI 兼容接口）：对「回答是否忠实于引用来源、
-有无无引用的强断言」做 1-5 打分；任何失败返回 None，不影响规则结论。
+LLM-as-Judge（--llm，需OpenAI兼容接口）：对「回答是否忠实于引用来源、
+有无无引用的强断言」做1-5打分；任何失败返回None，不影响规则结论。
 
 用法::
 
@@ -38,12 +38,12 @@ _SOURCE_ITEM = re.compile(r"^\[(\d+)\]\s+(.+?)$", re.M)
 
 
 def parse_trace(text: str) -> dict:
-    """把一份轨迹 markdown 解析成结构化字典。"""
+    """把一份轨迹markdown解析成结构化字典。"""
     question_m = re.search(r"## 问题\n(.+)", text)
     answer_m = re.search(r"## 最终回答\n(.*?)(?=\n来源：|\Z)", text, re.S)
     process_m = re.search(r"## 过程\n(.*?)(?=\n## |\Z)", text, re.S)
 
-    # 来源表取最后一个「来源：」块（部分轨迹会因 CLI 打印两次）
+    # 来源表取最后一个「来源：」块（部分轨迹会因CLI打印两次）
     blocks = text.split("来源：")
     sources: dict[int, dict[str, str]] = {}
     for block in blocks[1:]:
@@ -87,7 +87,7 @@ def parse_trace(text: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# 规则类 check（零 LLM）
+# 规则类check（零LLM）
 # ---------------------------------------------------------------------------
 
 def rule_checks(trace: dict) -> list[dict]:
@@ -136,7 +136,7 @@ _JUDGE_SYSTEM = (
 
 
 def llm_judge(question: str, answer: str, *, base_url: str, api_key: str,
-              model: str = "gpt-4o-mini", timeout: int = 60) -> Optional[dict]:
+              model: str = "MiniMaxAI/MiniMax-M3", timeout: int = 60) -> Optional[dict]:
     payload = json.dumps({
         "model": model,
         "messages": [
@@ -214,9 +214,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     llm_kwargs = {
-        "base_url": os.environ.get("LLM_BASE_URL") or os.environ.get("FINREPORT_BASE_URL", ""),
-        "api_key": os.environ.get("LLM_API_KEY") or os.environ.get("FINREPORT_API_KEY", ""),
-        "model": os.environ.get("FINREPORT_MODEL", "gpt-4o-mini"),
+        "base_url": os.environ.get("LLM_BASE_URL", ""),
+        "api_key": os.environ.get("LLM_API_KEY", ""),
+        "model": os.environ.get("LLM_MODEL", "MiniMaxAI/MiniMax-M3"),
     }
     summary = evaluate_dir(args.dir, llm=args.llm, **llm_kwargs)
     output = json.dumps(summary, ensure_ascii=False, indent=2, default=str)

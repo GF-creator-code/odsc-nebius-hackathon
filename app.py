@@ -1,13 +1,13 @@
-"""Sourced — 研究型 Agent 的 Web 界面（Streamlit 薄适配层）
+"""Sourced — 研究型Agent的Web界面（Streamlit薄适配层）
 
-启动：streamlit run app.py   （或 python -m streamlit run app.py）
+启动：streamlit run app.py   （或python -m streamlit run app.py）
 定位通用：不绑定任何专业领域，问题由用户自由输入。
 
 工程要点：
-- 只消费 agent.research_events() 事件流，不复制任何核心逻辑
+- 只消费agent.research_events() 事件流，不复制任何核心逻辑
 - 阶段化实时反馈（st.status）：规划/搜索/评估/综合每步可见，长任务不"假死"
 - 结果占位符每次运行在同一路径重建（st.empty）→ 新研究开始"立即"替换旧结果；
-  上次完成的结果存 session_state，非运行的重渲染时恢复，交互不会清屏
+  上次完成的结果存session_state，非运行的重渲染时恢复，交互不会清屏
 - 引用 [n] 渲染为可点击链接（评委现场核验）
 - "证据不足"原样呈现，不美化；异常显式报错，绝不静默
 """
@@ -21,9 +21,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from agent import research_events, linkify_citations  # noqa: E402
 
 st.set_page_config(page_title="Sourced — research with evidence",
-                   page_icon="🔎", layout="centered")
+                   layout="centered")
 
-st.title("🔎 Sourced")
+st.title("Sourced")
 st.caption("A research agent that turns questions into **sourced, verifiable answers** — "
            "every claim carries a citation you can open.")
 
@@ -59,7 +59,7 @@ if not question.strip():
 
 def _render_result(box, trace_lines: list, answer: str, sources: list,
                    label: str, state: str) -> None:
-    """把一份完成的研究结果渲染进 box（运行完成时与恢复上次结果共用）。"""
+    """把一份完成的研究结果渲染进box（运行完成时与恢复上次结果共用）。"""
     status = box.status(label, state=state, expanded=False)
     status.markdown("```text\n" + "\n".join(trace_lines) + "\n```",
                     help="Research trace — decision log of the agent")
@@ -80,7 +80,7 @@ if run and question.strip():
     q = question.strip()
     result_box = ph.container()
 
-    status = result_box.status(f"🗺 Researching: {q[:80]}", expanded=True)
+    status = result_box.status(f"Researching: {q[:80]}", expanded=True)
     trace_ph = status.empty()
     answer, sources, lines = None, [], []
 
@@ -91,47 +91,49 @@ if run and question.strip():
         for ev in research_events(q):
             t = ev["type"]
             if t == "plan":
-                lines.append(f"🗺 规划查询: {', '.join(ev['queries'])}")
-                _flush("🔍 搜索中…")
-                status.update(label="🔍 Searching…")
+                lines.append(f"规划查询: {', '.join(ev['queries'])}")
+                _flush("搜索中…")
+                status.update(label="Searching…")
             elif t == "round":
                 for e in ev.get("errors", []):
-                    lines.append(f"⚠️ {e}")
+                    lines.append(f"警告：{e}")
                 if ev["round"] > 0:
-                    lines.append(f"🔍 第 {ev['round']} 轮：{ev['queries']} 个查询，"
+                    lines.append(f"第 {ev['round']} 轮：{ev['queries']} 个查询，"
                                  f"新增 {ev['added']} 条，累计 {ev['total']} 条")
-                _flush("🧠 评估证据是否充分…")
+                _flush("评估证据是否充分…")
             elif t == "judge":
-                if ev["sufficient"]:
+                if ev.get("eval_failed"):  # 评估调用失败≠证据充分：如实显示，不美化
+                    lines.append(f"评估失败，按预算上限停止检索：{ev['reason']}")
+                elif ev["sufficient"]:
                     cov = ev.get("coverage") or {}
-                    lines.append(f"✅ 证据充分，停止搜索：{ev['reason']}"
+                    lines.append(f"证据充分，停止搜索：{ev['reason']}"
                                  + (f"｜覆盖度 {list(cov.keys())}" if cov else ""))
                 else:
-                    lines.append(f"➕ 证据不足：{ev['reason']}")
+                    lines.append(f"证据不足：{ev['reason']}")
                     if ev.get("gaps"):
-                        lines.append(f"🕳 未覆盖子问题：{ev['gaps']}")
-                _flush("🧠 评估证据是否充分…")
+                        lines.append(f"未覆盖子问题：{ev['gaps']}")
+                _flush("评估证据是否充分…")
             elif t == "rank":
-                lines.append(f"⚖️ 降权：聚合站 {ev['aggregator']} 条 / "
+                lines.append(f"降权：聚合站 {ev['aggregator']} 条 / "
                              f"社交平台 {ev['social']} 条（后置不删除）")
-                _flush("📝 综合答案中…")
-                status.update(label="📝 Synthesizing answer…")
+                _flush("综合答案中…")
+                status.update(label="Synthesizing answer…")
             elif t == "cap":
-                lines.append(f"✂️ 证据池 {ev['before']} → {ev['after']} 条"
+                lines.append(f"证据池 {ev['before']} → {ev['after']} 条"
                              + (f"（淘汰 {len(ev.get('dropped', []))} 条）" if ev.get("dropped") else ""))
-                _flush("📝 综合答案中…")
+                _flush("综合答案中…")
             elif t == "answer":
                 answer, sources = ev["text"], ev["sources"]
     except Exception as e:  # 失败绝不静默：界面明确呈现错误
-        status.update(label="❌ Research failed", state="error", expanded=True)
+        status.update(label="Research failed", state="error", expanded=True)
         trace_ph.markdown("```text\n" + "\n".join(lines) + "\n```")
         result_box.error(f"研究过程出错：{e}")
         st.stop()
 
     # 完成态：收起轨迹、结果落在同一容器内（不整块重绘，避免闪烁）；
-    # 存 session_state，后续交互触发的重渲染用 _render_result 恢复同样的内容
-    label = (f"✅ Done · {len(sources)} sources"
-             if sources else "⚠️ Insufficient evidence")
+    # 存session_state，后续交互触发的重渲染用 _render_result恢复同样的内容
+    label = (f"Done · {len(sources)} sources"
+             if sources else "Insufficient evidence")
     status.update(label=label, state="complete" if sources else "error", expanded=False)
     trace_ph.markdown("```text\n" + "\n".join(lines) + "\n```",
                       help="Research trace — decision log of the agent")
@@ -147,7 +149,7 @@ if run and question.strip():
         "trace": lines, "answer": answer, "sources": sources, "label": label,
         "state": "complete" if sources else "error",
     }
-    st.button("🏠 返回主页（开始新的研究）", on_click=_go_home, use_container_width=True)
+    st.button("返回主页（开始新的研究）", on_click=_go_home, use_container_width=True)
 
 else:
     # 非运行的交互（输入、点击）不丢结果：恢复上次完成态
@@ -155,4 +157,4 @@ else:
     if last:
         _render_result(ph.container(), last["trace"], last["answer"],
                        last["sources"], last["label"], last["state"])
-        st.button("🏠 返回主页（开始新的研究）", on_click=_go_home, use_container_width=True)
+        st.button("返回主页（开始新的研究）", on_click=_go_home, use_container_width=True)
