@@ -1,15 +1,15 @@
-"""Tavily 搜索客户端（ODSC × Nebius Hackathon）
+"""Tavily搜索客户端（ODSC × Nebius Hackathon）
 
-Tavily 负责"取证据"：实时联网搜索，返回正文摘要 + 原始来源链接。
+Tavily负责"取证据"：实时联网搜索，返回正文摘要 + 原始来源链接。
 评分要求来源链接一路存活到最终答案（Sourced and verifiable answers, 30%），
-所以 search() 返回的每条结果都保留 url / title / content，供引用层使用。
+所以search() 返回的每条结果都保留url / title / content，供引用层使用。
 
 加固点：
-- 瞬时失败（网络抖动/429/5xx）指数退避重试，最多 2 次；鉴权/额度错误快速失败
-- 响应结构校验：畸形 JSON 不静默返回空，显式报错
-- requests.Session 连接复用
+- 瞬时失败（网络抖动/429/5xx）指数退避重试，最多2次；鉴权/额度错误快速失败
+- 响应结构校验：畸形JSON不静默返回空，显式报错
+- requests.Session连接复用
 
-配置：在 .env 里写 TAVILY_API_KEY=tvly-xxxx（app.tavily.com 免费注册，每月 1000 次）。
+配置：在 .env里写TAVILY_API_KEY=tvly-xxxx（app.tavily.com免费注册，每月1000次）。
 """
 
 import os
@@ -26,7 +26,7 @@ _session = requests.Session()
 
 
 class TavilyError(RuntimeError):
-    """key 未配置 / 无效 / 网络不可达等，message 面向使用者。"""
+    """key未配置 / 无效 / 网络不可达等，message面向使用者。"""
 
 
 class TavilySearch:
@@ -42,13 +42,13 @@ class TavilySearch:
         """搜索并返回 {"results": [{"title", "url", "content"}], "answer": str|None}
 
         search_depth: "basic" 1 credit / "advanced" 2 credits（相关性更好，决赛演示可用）。
-        失败抛 TavilyError，不静默返回空结果（比赛要求处理失败且不得编造）。
+        失败抛TavilyError，不静默返回空结果（比赛要求处理失败且不得编造）。
         """
         payload = {
             "query": query,
             "max_results": max_results,
             "search_depth": search_depth,
-            "include_answer": True,  # 让 Tavily 顺带给一句综合答案，可作合成参考
+            "include_answer": True,  # 让Tavily顺带给一句综合答案，可作合成参考
         }
         last_err = None
         for attempt in range(RETRIES + 1):
@@ -104,7 +104,7 @@ class TavilySearch:
 
 
 def load_env(path: str = None) -> None:
-    """极简 .env 加载：KEY=VALUE 逐行读入环境变量（不覆盖已有值）。"""
+    """极简 .env加载：KEY=VALUE逐行读入环境变量（不覆盖已有值）。"""
     path = path or os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
     if not os.path.exists(path):
         return

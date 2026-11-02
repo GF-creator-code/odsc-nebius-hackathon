@@ -1,17 +1,17 @@
-"""LLM 推理客户端（可插拔）
+"""LLM推理客户端（可插拔）
 
-默认端点为 Nebius Token Factory（OpenAI 兼容），可用 .env 覆盖：
+默认端点为Nebius Token Factory（OpenAI兼容），可用 .env覆盖：
     LLM_BASE_URL=https://api.tokenfactory.nebius.com/v1
     LLM_API_KEY=<nebius key>
     LLM_MODEL=MiniMaxAI/MiniMax-M3
-未设置 LLM_API_KEY 时回退读取 OpenCode 登录文件（本地开发便利）。
+未设置LLM_API_KEY时回退读取OpenCode登录文件（本地开发便利）。
 其余代码零改动。
 
 
 加固点：
-- 瞬时失败（网络/429/5xx）指数退避重试，最多 2 次；鉴权错误快速失败
-- content 为 None（部分模型工具调用场景）显式报错，不返回空串冒充答案
-- requests.Session 连接复用
+- 瞬时失败（网络/429/5xx）指数退避重试，最多2次；鉴权错误快速失败
+- content为None（部分模型工具调用场景）显式报错，不返回空串冒充答案
+- requests.Session连接复用
 """
 
 import json
@@ -26,7 +26,7 @@ DEFAULT_MODEL = "MiniMaxAI/MiniMax-M3"
 RETRIES = 2
 BACKOFF = (2, 5)
 
-# OpenCode 登录文件：key 已在本机，避免明文复制到处散落
+# OpenCode登录文件：key已在本机，避免明文复制到处散落
 OPENCODE_AUTH = os.path.expanduser("~/.local/share/opencode/auth.json")
 
 _session = requests.Session()
@@ -58,7 +58,7 @@ def _opencode_key() -> str:
 
 
 def chat(messages: list, model: str = None, temperature: float = 0.2) -> str:
-    """OpenAI 兼容 chat completions，返回首条回复文本。失败抛 LLMError，绝不静默。"""
+    """OpenAI兼容chat completions，返回首条回复文本。失败抛LLMError，绝不静默。"""
     load_env()
     base = os.environ.get("LLM_BASE_URL", DEFAULT_BASE).rstrip("/")
     key = os.environ.get("LLM_API_KEY", "").strip() or _opencode_key()

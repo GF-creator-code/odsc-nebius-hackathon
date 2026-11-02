@@ -1,6 +1,6 @@
-"""Tavily 连通性自检：python test_tavily.py
+"""Tavily连通性自检：python test_tavily.py
 
-通过标准：跑一个真实查询，打印 Tavily 的综合答案与带来源链接的结果列表。
+通过标准：跑一个真实查询，打印Tavily的综合答案与带来源链接的结果列表。
 """
 
 from websearch import get_client, load_env, TavilyError
@@ -20,8 +20,8 @@ query = "ODSC AI West 2026 hackathon Nebius"
 print(f"[*] 查询: {query}\n")
 data = client.search(query, max_results=3)
 
-print(f"[✓] 综合答案: {data['answer']}\n")
-print("[✓] 来源:")
+print(f"[ok] 综合答案: {data['answer']}\n")
+print("[ok] 来源:")
 for i, r in enumerate(data["results"], 1):
     print(f"  {i}. {r['title']}\n     {r['url']}\n     {r['content'][:80]}...\n")
-print("[✓] Tavily API 配置完成，来源链接可用于引用层。")
+print("[ok] Tavily API 配置完成，来源链接可用于引用层。")
