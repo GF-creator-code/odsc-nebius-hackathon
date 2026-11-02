@@ -1,6 +1,6 @@
-"""纯逻辑自测（不联网、不耗 API 额度）：python tests/test_pure.py
+"""纯逻辑自测（不联网、不耗API额度）：python tests/test_pure.py
 
-覆盖加固后的关键纯函数：JSON 容错解析、证据池截断、正文截断、轨迹落盘。
+覆盖加固后的关键纯函数：JSON容错解析、证据池截断、正文截断、轨迹落盘。
 """
 
 import os
@@ -22,7 +22,7 @@ def test_json_out_variants():
             _json_out(bad)
             raise SystemExit(f"[fail] 应拒绝: {bad!r}")
         except ValueError:
-            pass  # JSONDecodeError 是 ValueError 子类，符合预期
+            pass  # JSONDecodeError是ValueError子类，符合预期
     print("[ok] _json_out 容错解析")
 
 
@@ -30,7 +30,7 @@ def test_source_cap():
     fake = [{"title": f"t{i}", "url": f"https://x/{i}", "content": "c"} for i in range(50)]
     capped = fake[:MAX_SOURCES]
     assert len(capped) == MAX_SOURCES == 12
-    # 引用编号不悬空：提示词里的编号与来源列表一致由 gather 保证，这里验证截断保持顺序
+    # 引用编号不悬空：提示词里的编号与来源列表一致由gather保证，这里验证截断保持顺序
     assert capped[0]["url"] == "https://x/0"
     print("[ok] 证据池截断 MAX_SOURCES=12")
 
@@ -45,7 +45,7 @@ def test_snippet_truncation():
 
 
 def test_trace_save():
-    from agent import format_output  # 轨迹落盘逻辑已并入 research()，此处验证输出格式化
+    from agent import format_output  # 轨迹落盘逻辑已并入research()，此处验证输出格式化
     srcs = [{"title": "a", "url": "https://a", "content": "c"},
             {"title": "b", "url": "https://b", "content": "c"}]
     out = format_output("答案[1][2]", srcs)
@@ -63,7 +63,7 @@ def test_linkify_citations():
 
 
 def test_norm_url_dedup():
-    # 同文的 http/https、www、查询串、末尾斜杠差异必须视作同一条（Hkate777 PR#1）
+    # 同文的http/https、www、查询串、末尾斜杠差异必须视作同一条（Hkate777 PR#1）
     pairs = [
         ("http://www.a.com/x/", "https://a.com/x"),
         ("https://a.com/x?from=search", "http://a.com/x"),
@@ -72,12 +72,12 @@ def test_norm_url_dedup():
     for a, b in pairs:
         assert norm_url(a) == norm_url(b), f"应等价: {a} vs {b}"
     assert norm_url("https://a.com/x") != norm_url("https://a.com/y")  # 不同路径不误杀
-    assert norm_url("") == ""  # 空值不炸（防御 URL 缺失的来源）
+    assert norm_url("") == ""  # 空值不炸（防御URL缺失的来源）
     print("[ok] URL 规范化去重")
 
 
 def test_norm_url_amp():
-    # AMP 移动版变体必须与桌面版视为同一篇（实测中 [8][10] 漏网）
+    # AMP移动版变体必须与桌面版视为同一篇（实测中 [8][10] 漏网）
     assert norm_url("https://www.cnbc.com/amp/2024/06/27/x.html") == \
         norm_url("https://www.cnbc.com/2024/06/27/x.html")
     assert norm_url("https://a.com/x/amp/") == norm_url("https://a.com/x")  # 后缀形式
@@ -93,7 +93,7 @@ def test_selfmedia_demotion():
               "https://caifuhao.eastmoney.com/p/1"):
         assert source_tier(u) == 1, f"应降权: {u}"
     assert source_tier("https://www.nobelprize.org/x") == 0  # 一手来源不降权
-    # 计入 aggregator 统计：demoted_counts 结构不变，app.py 无需改动
+    # 计入aggregator统计：demoted_counts结构不变，app.py无需改动
     rs = [{"url": "https://www.tradingkey.com/a"}, {"url": "https://www.gov.cn/x"}]
     assert demoted_counts(rs) == {"aggregator": 1, "social": 0}
     print("[ok] 券商/股评自媒体降权")
@@ -105,7 +105,7 @@ def test_quality_ranking():
     assert source_tier("https://www.facebook.com/p/1") == 2
     assert source_tier("https://medium.com/@x/post") == 1
     assert source_tier("https://www.nobelprize.org/x") == 0
-    # 稳定排序：同 tier 保持原顺序，社交/聚合后置但不删除
+    # 稳定排序：同tier保持原顺序，社交/聚合后置但不删除
     rs = [{"url": "https://x.com/a"}, {"url": "https://www.gov.cn/x"},
           {"url": "https://medium.com/b"}, {"url": "https://nobelprize.org/y"}]
     ranked = rank_sources(rs)
@@ -125,4 +125,4 @@ if __name__ == "__main__":
     test_norm_url_amp()      # 新增
     test_selfmedia_demotion()  # 新增
     test_quality_ranking()
-    print("\n[✓] 全部纯逻辑测试通过")
+    print("\n[ok] 全部纯逻辑测试通过")

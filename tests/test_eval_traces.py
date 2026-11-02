@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""eval_traces 评测器测试：轨迹解析 + 引用完整性规则。"""
+"""eval_traces评测器测试：轨迹解析 + 引用完整性规则。"""
 
 import sys
 from pathlib import Path

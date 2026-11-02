@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""judge_evidence 回归测试：评估失败必须与「证据充分」状态区分（真实缺陷修复）。
+"""judge_evidence回归测试：评估失败必须与「证据充分」状态区分（真实缺陷修复）。
 
-缺陷背景：此前 judge_evidence 异常时返回 sufficient=True 且无失败标记，
+缺陷背景：此前judge_evidence异常时返回sufficient=True且无失败标记，
 界面与轨迹会把「评估失败」显示成「证据充分」。修复后异常路径携带
 eval_failed=True，事件行据此显示不同文案。
 """
