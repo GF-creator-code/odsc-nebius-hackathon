@@ -14,11 +14,15 @@
 
 import os
 import sys
+import time
 
 import streamlit as st
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from agent import research_events, linkify_citations  # noqa: E402
+import llm  # noqa: E402
+from agent import (  # noqa: E402
+    MAX_ROUNDS, MAX_SOURCES, linkify_citations, research_events,
+)
 
 st.set_page_config(page_title="Sourced — research with evidence",
                    layout="centered")
@@ -26,6 +30,19 @@ st.set_page_config(page_title="Sourced — research with evidence",
 st.title("Sourced")
 st.caption("A research agent that turns questions into **sourced, verifiable answers** — "
            "every claim carries a citation you can open.")
+
+# 侧边栏：运行配置透明化——演示时评委可直接核验推理端点与模型，不必翻轨迹文件
+_base = os.environ.get("LLM_BASE_URL", llm.DEFAULT_BASE)
+_model = os.environ.get("LLM_MODEL", llm.DEFAULT_MODEL)
+with st.sidebar:
+    st.header("Runtime config")
+    st.markdown("**Inference endpoint**")
+    st.code(_base, language=None)
+    st.markdown("**Model**")
+    st.code(_model, language=None)
+    st.markdown("**Search budget**")
+    st.code(f"max {MAX_ROUNDS} rounds · max {MAX_SOURCES} sources", language=None)
+    st.caption("API keys load from a local .env only; never committed to the repo.")
 
 EXAMPLES = [
     "What won the 2026 Nobel Prize in Physics, and for what work?",
@@ -57,12 +74,22 @@ if not question.strip():
         st.button(ex, on_click=_use_example, args=(ex,), use_container_width=True)
 
 
+def _render_metrics(box, metrics: dict) -> None:
+    """结果指标行：来源数/检索轮数/耗时，评委一眼看到本次运行的规模。"""
+    m1, m2, m3 = box.columns(3)
+    m1.metric("Sources", metrics["sources"])
+    m2.metric("Search rounds", metrics["rounds"])
+    m3.metric("Elapsed", metrics["elapsed"])
+
+
 def _render_result(box, trace_lines: list, answer: str, sources: list,
-                   label: str, state: str) -> None:
+                   label: str, state: str, metrics: dict = None) -> None:
     """把一份完成的研究结果渲染进box（运行完成时与恢复上次结果共用）。"""
     status = box.status(label, state=state, expanded=False)
     status.markdown("```text\n" + "\n".join(trace_lines) + "\n```",
                     help="Research trace — decision log of the agent")
+    if metrics:
+        _render_metrics(box, metrics)
     if sources:
         box.divider()
         box.markdown(linkify_citations(answer, sources))
@@ -83,6 +110,7 @@ if run and question.strip():
     status = result_box.status(f"Researching: {q[:80]}", expanded=True)
     trace_ph = status.empty()
     answer, sources, lines = None, [], []
+    t0, rounds = time.time(), 0
 
     def _flush(next_hint: str) -> None:
         trace_ph.markdown("```text\n" + "\n".join(lines + [next_hint]) + "\n```")
@@ -95,6 +123,7 @@ if run and question.strip():
                 _flush("搜索中…")
                 status.update(label="Searching…")
             elif t == "round":
+                rounds = max(rounds, ev["round"])
                 for e in ev.get("errors", []):
                     lines.append(f"警告：{e}")
                 if ev["round"] > 0:
@@ -137,6 +166,9 @@ if run and question.strip():
     status.update(label=label, state="complete" if sources else "error", expanded=False)
     trace_ph.markdown("```text\n" + "\n".join(lines) + "\n```",
                       help="Research trace — decision log of the agent")
+    metrics = {"sources": len(sources), "rounds": rounds,
+               "elapsed": f"{time.time() - t0:.0f}s"}
+    _render_metrics(result_box, metrics)
     if sources:
         result_box.divider()
         result_box.markdown(linkify_citations(answer, sources))
@@ -147,7 +179,7 @@ if run and question.strip():
         result_box.warning(answer)  # 证据不足路径：原样呈现，不美化
     st.session_state["last_result"] = {
         "trace": lines, "answer": answer, "sources": sources, "label": label,
-        "state": "complete" if sources else "error",
+        "state": "complete" if sources else "error", "metrics": metrics,
     }
     st.button("返回主页（开始新的研究）", on_click=_go_home, use_container_width=True)
 
@@ -156,5 +188,6 @@ else:
     last = st.session_state.get("last_result")
     if last:
         _render_result(ph.container(), last["trace"], last["answer"],
-                       last["sources"], last["label"], last["state"])
+                       last["sources"], last["label"], last["state"],
+                       last.get("metrics"))
         st.button("返回主页（开始新的研究）", on_click=_go_home, use_container_width=True)

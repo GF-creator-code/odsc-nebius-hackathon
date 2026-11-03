@@ -1,5 +1,9 @@
 # Sourced · A Research Agent That Brings Its Sources
 
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
+![tests](https://img.shields.io/badge/tests-27%20passing-brightgreen)
+![license](https://img.shields.io/badge/license-MIT-green)
+
 > Turning a question into a **sourced, verifiable answer** — every claim carries a citation you can open and check.
 
 ODSC × Nebius Hackathon 2026 · Team **KK_yuanqu** · Oct 28 – Nov 20
@@ -54,7 +58,7 @@ python test_tavily.py       # verifies the search path end-to-end
 streamlit run app.py        # or: python -m streamlit run app.py
 ```
 
-Type a question, watch the live research trace (planning → search rounds → sufficiency judgment → source ranking), get an answer with **clickable inline citations**, and an honest warning when evidence is insufficient.
+Type a question, watch the live research trace (planning → search rounds → sufficiency judgment → source ranking), get an answer with **clickable inline citations**, and an honest warning when evidence is insufficient. The sidebar always shows the active inference endpoint and model — a reviewer can verify the Nebius Token Factory backend live during any run, without opening a trace file.
 
 **CLI** (same core, thin adapter):
 
