@@ -1,7 +1,7 @@
 # Sourced · A Research Agent That Brings Its Sources
 
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
-![tests](https://img.shields.io/badge/tests-27%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-28%20passing-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 > Turning a question into a **sourced, verifiable answer** — every claim carries a citation you can open and check.
@@ -147,4 +147,4 @@ python eval_traces.py --dir traces/          # 规则评测
 python eval_traces.py --dir traces/ --llm    # + LLM-as-Judge忠实度评审
 ```
 
-当前指标（4份真实轨迹）：**通过率100%**，平均来源11.8条/轨迹，平均2.5轮检索，100%轨迹触发定向补搜。测试：`python -m pytest tests/ -v`（27项）。
+当前指标（4份真实轨迹）：**通过率100%**，平均来源11.8条/轨迹，平均2.5轮检索，100%轨迹触发定向补搜。测试：`python -m pytest tests/ -v`（28项，含UI冒烟测试）。

@@ -74,6 +74,13 @@ if not question.strip():
         st.button(ex, on_click=_use_example, args=(ex,), use_container_width=True)
 
 
+def _answer_md(answer: str, sources: list) -> str:
+    """把答案与编号来源拼成Markdown，供下载带走（评委可离线核验引用）。"""
+    parts = [answer, "", "## Sources", ""]
+    parts += [f"{i}. [{s['title'] or s['url']}]({s['url']})" for i, s in enumerate(sources, 1)]
+    return "\n".join(parts)
+
+
 def _render_metrics(box, metrics: dict) -> None:
     """结果指标行：来源数/检索轮数/耗时，评委一眼看到本次运行的规模。"""
     m1, m2, m3 = box.columns(3)
@@ -96,6 +103,8 @@ def _render_result(box, trace_lines: list, answer: str, sources: list,
         box.subheader("Sources")
         for i, s in enumerate(sources, 1):
             box.markdown(f"{i}. [{s['title'] or s['url']}]({s['url']})")
+        box.download_button("下载答案（Markdown）", _answer_md(answer, sources),
+                            file_name="sourced-answer.md", mime="text/markdown")
     else:
         box.warning(answer)
 
@@ -175,6 +184,8 @@ if run and question.strip():
         result_box.subheader("Sources")
         for i, s in enumerate(sources, 1):
             result_box.markdown(f"{i}. [{s['title'] or s['url']}]({s['url']})")
+        result_box.download_button("下载答案（Markdown）", _answer_md(answer, sources),
+                                   file_name="sourced-answer.md", mime="text/markdown")
     else:
         result_box.warning(answer)  # 证据不足路径：原样呈现，不美化
     st.session_state["last_result"] = {
