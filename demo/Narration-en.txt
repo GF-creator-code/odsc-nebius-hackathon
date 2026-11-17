@@ -1,0 +1,17 @@
+This is Sourced, a research agent that answers questions with evidence you can verify. Inference runs on Nebius Token Factory, using the model shown here. Tavily provides real-time web search.
+
+Let's ask who won the twenty twenty-six Nobel Prize in Physics, and for what work. The agent plans complementary queries, searches the web, and checks which parts of the question the evidence covers. The trace shows each search round and why it continues or stops. Search is limited to three rounds, with up to twelve sources in the final evidence pool.
+
+The answer connects its claims to numbered citations. The source list below uses the same numbers, so a reviewer can check the evidence directly.
+
+We can open these links directly. This citation takes us to the Nobel Prize website, where the original sources can be checked.
+
+Here is the official press release for the year in the question. A reviewer can compare the award's stated motivation with the answer.
+
+Next, we ask for the location and capacity of a supposedly internal Nebius data center project, Aurora seven.
+
+This time, the evidence does not establish the project details. The agent identifies missing sub-questions and searches again. Each follow-up targets an uncovered part of the question. The gaps persist across three rounds, even as more sources are found. The search budget bounds the work. Once the third round is complete, the agent synthesizes what can actually be supported and calls out the unanswered parts.
+
+The final answer explicitly says there is insufficient evidence to answer, then explains what is missing. Finding related pages does not establish this project's location or construction scale. The missing details remain visible to the user.
+
+Sourced makes the research process visible, from query planning to evidence checks and a cited answer. The code and setup guide are public on GitHub. This is our hackathon project, from team K K yuanqu.

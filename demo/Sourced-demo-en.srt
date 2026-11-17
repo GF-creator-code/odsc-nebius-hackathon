@@ -1,0 +1,252 @@
+1
+00:00:00,100 --> 00:00:02,214
+This is Sourced, a research agent that
+
+2
+00:00:02,214 --> 00:00:04,162
+answers questions with evidence you
+
+3
+00:00:04,162 --> 00:00:05,325
+can verify.
+
+4
+00:00:05,275 --> 00:00:07,428
+Inference runs on Nebius Token
+
+5
+00:00:07,428 --> 00:00:10,012
+Factory, using the model shown here.
+
+6
+00:00:10,012 --> 00:00:13,068
+Tavily provides real-time web search.
+
+7
+00:00:13,088 --> 00:00:14,736
+Let's ask who won the twenty
+
+8
+00:00:14,736 --> 00:00:16,972
+twenty-six Nobel Prize in Physics, and
+
+9
+00:00:16,972 --> 00:00:18,175
+for what work.
+
+10
+00:00:18,175 --> 00:00:20,187
+The agent plans complementary queries,
+
+11
+00:00:20,187 --> 00:00:21,987
+searches the web, and checks which
+
+12
+00:00:21,987 --> 00:00:23,788
+parts of the question the evidence
+
+13
+00:00:23,788 --> 00:00:24,918
+covers.
+
+14
+00:00:24,938 --> 00:00:27,280
+The trace shows each search round and
+
+15
+00:00:27,280 --> 00:00:28,925
+why it continues or stops.
+
+16
+00:00:28,925 --> 00:00:30,911
+Search is limited to three rounds,
+
+17
+00:00:30,911 --> 00:00:33,130
+with up to twelve sources in the final
+
+18
+00:00:33,130 --> 00:00:34,337
+evidence pool.
+
+19
+00:00:34,337 --> 00:00:36,701
+The answer connects its claims to
+
+20
+00:00:36,701 --> 00:00:38,062
+numbered citations.
+
+21
+00:00:38,062 --> 00:00:40,171
+The source list below uses the same
+
+22
+00:00:40,171 --> 00:00:42,341
+numbers, so a reviewer can check the
+
+23
+00:00:42,341 --> 00:00:43,600
+evidence directly.
+
+24
+00:00:43,600 --> 00:00:46,300
+We can open these links directly.
+
+25
+00:00:46,300 --> 00:00:48,420
+This citation takes us to the Nobel
+
+26
+00:00:48,420 --> 00:00:50,419
+Prize website, where the original
+
+27
+00:00:50,419 --> 00:00:51,792
+sources can be checked.
+
+28
+00:00:51,812 --> 00:00:54,120
+Here is the official press release for
+
+29
+00:00:54,120 --> 00:00:55,638
+the year in the question.
+
+30
+00:00:55,638 --> 00:00:57,869
+A reviewer can compare the award's
+
+31
+00:00:57,869 --> 00:01:00,100
+stated motivation with the answer.
+
+32
+00:01:00,100 --> 00:01:02,042
+Next, we ask for the location and
+
+33
+00:01:02,042 --> 00:01:03,985
+capacity of a supposedly internal
+
+34
+00:01:03,985 --> 00:01:05,986
+Nebius data center project, Aurora
+
+35
+00:01:05,986 --> 00:01:07,138
+seven.
+
+36
+00:01:07,138 --> 00:01:09,383
+This time, the evidence does not
+
+37
+00:01:09,383 --> 00:01:11,487
+establish the project details.
+
+38
+00:01:11,487 --> 00:01:13,426
+The agent identifies missing
+
+39
+00:01:13,426 --> 00:01:15,693
+sub-questions and searches again.
+
+40
+00:01:15,713 --> 00:01:18,064
+Each follow-up targets an uncovered
+
+41
+00:01:18,064 --> 00:01:19,475
+part of the question.
+
+42
+00:01:19,475 --> 00:01:21,971
+The gaps persist across three rounds,
+
+43
+00:01:21,971 --> 00:01:24,062
+even as more sources are found.
+
+44
+00:01:24,062 --> 00:01:26,625
+The search budget bounds the work.
+
+45
+00:01:26,625 --> 00:01:28,494
+Once the third round is complete, the
+
+46
+00:01:28,494 --> 00:01:30,414
+agent synthesizes what can actually be
+
+47
+00:01:30,414 --> 00:01:32,334
+supported and calls out the unanswered
+
+48
+00:01:32,334 --> 00:01:33,455
+parts.
+
+49
+00:01:33,475 --> 00:01:35,762
+The final answer explicitly says there
+
+50
+00:01:35,762 --> 00:01:37,869
+is insufficient evidence to answer,
+
+51
+00:01:37,869 --> 00:01:39,655
+then explains what is missing.
+
+52
+00:01:39,675 --> 00:01:41,635
+Finding related pages does not
+
+53
+00:01:41,635 --> 00:01:43,986
+establish this project's location or
+
+54
+00:01:43,986 --> 00:01:45,275
+construction scale.
+
+55
+00:01:45,275 --> 00:01:47,647
+The missing details remain visible to
+
+56
+00:01:47,647 --> 00:01:48,750
+the user.
+
+57
+00:01:48,750 --> 00:01:50,816
+Sourced makes the research process
+
+58
+00:01:50,816 --> 00:01:52,699
+visible, from query planning to
+
+59
+00:01:52,699 --> 00:01:54,825
+evidence checks and a cited answer.
+
+60
+00:01:54,825 --> 00:01:57,042
+The code and setup guide are public on
+
+61
+00:01:57,042 --> 00:01:58,088
+GitHub.
+
+62
+00:01:58,088 --> 00:02:01,047
+This is our hackathon project, from
+
+63
+00:02:01,047 --> 00:02:02,400
+team K K yuanqu.
+
